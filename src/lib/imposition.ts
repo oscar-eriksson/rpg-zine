@@ -1,4 +1,4 @@
-import { PDFDocument } from 'pdf-lib';
+import { PDFDocument, PDFPage } from 'pdf-lib';
 
 export interface ImpositionOptions {
 	size: 'A5' | 'A6';
@@ -44,7 +44,7 @@ export async function impose(pdfData: ArrayBuffer, options: ImpositionOptions): 
 
 async function drawPageInArea(
 	srcDoc: PDFDocument,
-	sheet: any, // PDFPage
+	sheet: PDFPage,
 	pageIndex: number,
 	x: number,
 	y: number,

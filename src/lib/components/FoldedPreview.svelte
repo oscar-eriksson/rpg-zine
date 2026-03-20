@@ -39,8 +39,8 @@
 	// Animation state
 	let isFlipping = $state(false);
 	let flipDir = $state<'fwd' | 'bwd'>('fwd');
-	let flipFrontSrc = $state('');
-	let flipBackSrc = $state('');
+	let flipActiveSrc = $state('');
+	let flipMirror = $state(false);
 
 	// Canvas refs
 	let leftCanvas = $state<HTMLCanvasElement | null>(null);
@@ -176,36 +176,54 @@
 		if (isFlipping || currentSpread >= totalSpreads - 1) return;
 		const nextSpread = currentSpread + 1;
 		const [nextLeft] = getSpreadPages(nextSpread);
+
+		// Skip flip animation for edge spreads where one side is hidden
+		if (leftPage === null || rightPage === null) {
+			currentSpread = nextSpread;
+			return;
+		}
+
 		const sa = untrack(() => stagingA);
 		const sb = untrack(() => stagingB);
 		if (!sa || !sb) return;
-		await Promise.all([renderPage(sa, untrack(() => rightPage)), renderPage(sb, nextLeft)]);
-		flipFrontSrc = sa.toDataURL();
-		flipBackSrc = sb.toDataURL();
+		const frontPageNum = untrack(() => rightPage);
+		await Promise.all([renderPage(sa, frontPageNum), renderPage(sb, nextLeft)]);
+		const frontSrc = sa.toDataURL();
+		const backSrc = sb.toDataURL();
+		flipActiveSrc = frontSrc;
+		flipMirror = false;
 		flipDir = 'fwd';
 		isFlipping = true;
 		currentSpread = nextSpread;
-		setTimeout(() => {
-			isFlipping = false;
-		}, 750);
+		setTimeout(() => { flipActiveSrc = backSrc; flipMirror = true; }, 350);
+		setTimeout(() => { isFlipping = false; flipMirror = false; }, 750);
 	}
 
 	async function goPrev() {
 		if (isFlipping || currentSpread <= 0) return;
 		const prevSpread = currentSpread - 1;
 		const [, prevRight] = getSpreadPages(prevSpread);
+
+		// Skip flip animation for edge spreads where one side is hidden
+		if (leftPage === null || rightPage === null) {
+			currentSpread = prevSpread;
+			return;
+		}
+
 		const sa = untrack(() => stagingA);
 		const sb = untrack(() => stagingB);
 		if (!sa || !sb) return;
-		await Promise.all([renderPage(sa, untrack(() => leftPage)), renderPage(sb, prevRight)]);
-		flipFrontSrc = sa.toDataURL();
-		flipBackSrc = sb.toDataURL();
+		const frontPageNum = untrack(() => leftPage);
+		await Promise.all([renderPage(sa, frontPageNum), renderPage(sb, prevRight)]);
+		const frontSrc = sa.toDataURL();
+		const backSrc = sb.toDataURL();
+		flipActiveSrc = frontSrc;
+		flipMirror = false;
 		flipDir = 'bwd';
 		isFlipping = true;
 		currentSpread = prevSpread;
-		setTimeout(() => {
-			isFlipping = false;
-		}, 750);
+		setTimeout(() => { flipActiveSrc = backSrc; flipMirror = true; }, 350);
+		setTimeout(() => { isFlipping = false; flipMirror = false; }, 750);
 	}
 
 	function handleKey(e: KeyboardEvent) {
@@ -279,8 +297,21 @@
 
 		<div class="text-center">
 			<div class="text-[10px] uppercase tracking-widest text-slate-500">Spread</div>
-			<div class="text-base font-bold text-white tabular-nums">
-				{currentSpread + 1}<span class="text-sm font-normal text-slate-500"> / {totalSpreads}</span>
+			<div class="flex items-baseline gap-1 text-base font-bold text-white tabular-nums">
+				<input
+					type="number"
+					min="1"
+					max={totalSpreads}
+					value={currentSpread + 1}
+					onchange={(e) => {
+						const v = Math.max(1, Math.min(totalSpreads, parseInt((e.target as HTMLInputElement).value) || 1));
+						(e.target as HTMLInputElement).value = String(v);
+						currentSpread = v - 1;
+					}}
+					onkeydown={(e) => e.stopPropagation()}
+					class="w-10 bg-transparent text-center text-base font-bold text-white outline-none [appearance:textfield] hover:text-purple-300 focus:text-purple-300 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+				/>
+				<span class="text-sm font-normal text-slate-500">/ {totalSpreads}</span>
 			</div>
 		</div>
 
@@ -313,34 +344,32 @@
 		<div class="book-tilt">
 			<!-- Open book -->
 			<div class="book-open">
-				<!-- Left page -->
-				<div class="page-panel page-left">
-					<canvas bind:this={leftCanvas} class="page-canvas"></canvas>
-					<div class="spine-shadow spine-shadow-l"></div>
-				</div>
+				<!-- Left page (hidden on first spread) -->
+				{#if leftPage !== null}
+					<div class="page-panel page-left">
+						<canvas bind:this={leftCanvas} class="page-canvas"></canvas>
+						<div class="spine-shadow spine-shadow-l"></div>
+					</div>
+				{/if}
 
 				<!-- Spine -->
 				<div class="book-spine"></div>
 
-				<!-- Right page -->
-				<div class="page-panel page-right">
-					<canvas bind:this={rightCanvas} class="page-canvas"></canvas>
-					<div class="spine-shadow spine-shadow-r"></div>
-					<div class="page-curl"></div>
-				</div>
+				<!-- Right page (hidden on last spread) -->
+				{#if rightPage !== null}
+					<div class="page-panel page-right" class:rounded-l={leftPage === null}>
+						<canvas bind:this={rightCanvas} class="page-canvas"></canvas>
+						<div class="spine-shadow spine-shadow-r"></div>
+						<div class="page-curl"></div>
+					</div>
+				{/if}
 
-				<!-- Flip animation overlay -->
+				<!-- Flip animation overlay — single face with midpoint src swap to avoid mirror artifact -->
 				{#if isFlipping}
 					<div class={flipDir === 'fwd' ? 'flip-container flip-fwd' : 'flip-container flip-bwd'}>
-						<div class="flip-face flip-front">
-							<img src={flipFrontSrc} class="page-img" alt="" />
-							<div class="spine-shadow {flipDir === 'fwd' ? 'spine-shadow-r' : 'spine-shadow-l'}">
-							</div>
-						</div>
-						<div class="flip-face flip-back">
-							<img src={flipBackSrc} class="page-img" alt="" />
-							<div class="spine-shadow {flipDir === 'fwd' ? 'spine-shadow-l' : 'spine-shadow-r'}">
-							</div>
+						<div class="flip-face" style={flipMirror ? 'transform: scaleX(-1)' : ''}>
+							<img src={flipActiveSrc} class="page-img" alt="" />
+							<div class="spine-shadow {flipDir === 'fwd' ? 'spine-shadow-r' : 'spine-shadow-l'}"></div>
 						</div>
 					</div>
 				{/if}
@@ -418,6 +447,10 @@
 
 	.page-right {
 		border-radius: 0 3px 3px 0;
+	}
+
+	.page-right.rounded-l {
+		border-radius: 3px;
 	}
 
 	.page-canvas {
@@ -515,7 +548,6 @@
 		top: 0;
 		bottom: 0;
 		width: calc((100% - 22px) / 2);
-		transform-style: preserve-3d;
 		z-index: 20;
 	}
 
@@ -564,17 +596,11 @@
 	.flip-face {
 		position: absolute;
 		inset: 0;
-		backface-visibility: hidden;
-		-webkit-backface-visibility: hidden;
 		background: #f8f4ee;
 		overflow: hidden;
 		display: flex;
 		align-items: center;
 		justify-content: center;
-	}
-
-	.flip-back {
-		transform: rotateY(180deg);
 	}
 
 	.page-img {

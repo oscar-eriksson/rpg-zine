@@ -13,7 +13,7 @@
 		</div>
 	</a>
 	<nav class="hidden md:flex items-center gap-8 text-xs font-bold text-slate-500 tracking-widest uppercase">
-		{#each [['/', 'Generator'], ['/templates', 'Templates'], ['/guide', 'Guide']] as [href, label]}
+		{#each [['/', 'Generator'], ['/guide', 'Guide']] as [href, label]}
 			<a {href} class="transition-colors {$page.url.pathname === href ? 'text-white' : 'hover:text-slate-300'}">{label}</a>
 		{/each}
 		<span class="text-slate-800">|</span>
