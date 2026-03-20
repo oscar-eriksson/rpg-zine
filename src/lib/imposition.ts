@@ -32,13 +32,6 @@ export async function impose(pdfData: ArrayBuffer, options: ImpositionOptions): 
 		await imposeA6(srcDoc, outDoc, options, pageCount);
 	}
 
-	// Handle non-duplex: if duplex is false, we already have front/back pairs in sequence.
-	// Actually, the current logic adds front sheet, then back sheet.
-	// If duplex is true, they are meant to be printed on two sides of one paper.
-	// If duplex is false, they are just two pages in the PDF. This is already handled.
-	// However, if the user wants "Glue back-to-back", they might want something else.
-	// But usually they just print single sided and glue.
-
 	return await outDoc.save();
 }
 
@@ -55,10 +48,11 @@ async function drawPageInArea(
 	if (pageIndex < 0 || pageIndex >= srcDoc.getPageCount()) return;
 
 	const srcPage = srcDoc.getPage(pageIndex);
-	const rotationAngle = srcPage.getRotation().angle;
+	const [embeddedPage] = await sheet.doc.embedPages([srcPage]);
 	
-	// Get logical (visual) dimensions
+	// Get visual (effective) dimensions
 	const { width: vW, height: vH } = srcPage.getSize();
+	const rotation = srcPage.getRotation().angle;
 	
 	const availWidth = width - (margins.left + margins.right);
 	const availHeight = height - (margins.top + margins.bottom);
@@ -67,47 +61,38 @@ async function drawPageInArea(
 
 	// Optimal scale to fit visual dimensions in available box
 	const scale = Math.min(availWidth / vW, availHeight / vH);
-	const drawVW = vW * scale;
-	const drawVH = vH * scale;
+	const drawW = vW * scale;
+	const drawH = vH * scale;
 
-	// Calculate center of the target area
-	const centerX = x + margins.left + (availWidth - drawVW) / 2;
-	const centerY = y + margins.bottom + (availHeight - drawVH) / 2;
+	// Center point for the content on the sheet
+	const centerX = x + margins.left + (availWidth - drawW) / 2;
+	const centerY = y + margins.bottom + (availHeight - drawH) / 2;
 
-	// We'll embed the page and draw it. To keep it simple and handle all rotations
-	// consistently, we'll draw it with the appropriate center-pivot calculation.
-	const [embeddedPage] = await sheet.doc.embedPages([srcPage]);
+	// We must account for the fact that pdf-lib's drawPage rotates around 
+	// the provided (x, y) coordinates, which it treats as the bottom-left of the
+	// UNROTATED page content.
+	let drawX = centerX;
+	let drawY = centerY;
+	
+	// Use embeddedPage dimensions for the scaling, but rotation logic for position
 	const pW = embeddedPage.width;
 	const pH = embeddedPage.height;
 
-	// pdf-lib's rotate is COUNTER-CLOCKWISE.
-	// PDF's /Rotate is CLOCKWISE.
-	// page.getRotation().angle in pdf-lib is normalized to CCW.
-	
-	// The translation (tx, ty) needed to keep the rotated page's 
-	// bottom-left corner at (centerX, centerY) in the visual coordinate system.
-	// Rotating a (pW*scale, pH*scale) rect by 'rotationAngle' CCW around (0,0):
-	// New bounding box:
-	//   if 90:  x moves by -pH*scale? no.
-	// Let's just use the known offsets for 0, 90, 180, 270.
-	let tx = centerX;
-	let ty = centerY;
-
-	if (rotationAngle === 90) {
-		tx = centerX + drawVW;
-	} else if (rotationAngle === 180) {
-		tx = centerX + drawVW;
-		ty = centerY + drawVH;
-	} else if (rotationAngle === 270) {
-		ty = centerY + drawVH;
+	if (rotation === 90) {
+		drawX = centerX + drawW;
+	} else if (rotation === 180) {
+		drawX = centerX + drawW;
+		drawY = centerY + drawH;
+	} else if (rotation === 270) {
+		drawY = centerY + drawH;
 	}
 
 	sheet.drawPage(embeddedPage, {
-		x: tx,
-		y: ty,
+		x: drawX,
+		y: drawY,
 		width: pW * scale,
 		height: pH * scale,
-		rotate: degrees(rotationAngle),
+		rotate: degrees(rotation),
 	});
 }
 
