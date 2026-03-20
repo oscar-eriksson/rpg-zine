@@ -1,4 +1,4 @@
-import { PDFDocument, PDFPage } from 'pdf-lib';
+import { PDFDocument, PDFPage, degrees } from 'pdf-lib';
 
 export interface ImpositionOptions {
 	size: 'A5' | 'A6';
@@ -54,9 +54,21 @@ async function drawPageInArea(
 ) {
 	if (pageIndex < 0 || pageIndex >= srcDoc.getPageCount()) return;
 
-	const [embeddedPage] = await sheet.doc.embedPages([srcDoc.getPage(pageIndex)]);
-	const { width: pW, height: pH } = embeddedPage;
+	const srcPage = srcDoc.getPage(pageIndex);
+	
+	// Normalize rotation: Some PDF generators (especially on Windows) use the /Rotate flag
+	// instead of swapping width/height. We want the "native" visual orientation.
+	// By setting rotation to 0 before embedding, we ensure we handle the page as it appears.
+	const originalRotation = srcPage.getRotation().angle;
+	srcPage.setRotation(degrees(0));
 
+	const [embeddedPage] = await sheet.doc.embedPages([srcPage]);
+	
+	// If we normalized from 90/270, the native dimensions are likely swapped from 
+	// what we want to display. But actually, getSize() returns the logical size 
+	// AFTER rotation. So if we set rotation to 0, getSize() gives us the physical size.
+	const { width: pW, height: pH } = srcPage.getSize();
+	
 	const availWidth = width - 2 * margin;
 	const availHeight = height - 2 * margin;
 
@@ -75,6 +87,9 @@ async function drawPageInArea(
 		width: drawWidth,
 		height: drawHeight,
 	});
+
+	// Restore rotation if we might reuse the srcDoc (though here we don't really need to)
+	srcPage.setRotation(degrees(originalRotation));
 }
 
 async function imposeA5(srcDoc: PDFDocument, outDoc: PDFDocument, options: ImpositionOptions, pageCount: number) {
