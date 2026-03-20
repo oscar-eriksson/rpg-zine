@@ -82,26 +82,6 @@
 	});
 </script>
 
-<div class="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-purple-500/30 selection:text-purple-200">
-	<header class="p-8 lg:px-12 flex items-center justify-between border-b border-slate-900 bg-slate-950/50 backdrop-blur-xl sticky top-0 z-50">
-		<div class="flex items-center gap-4">
-			<div class="w-10 h-10 bg-linear-to-br from-purple-600 to-pink-600 rounded-xl flex items-center justify-center shadow-lg shadow-purple-500/20 rotate-3">
-				<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M8 7h6"/><path d="M8 11h8"/></svg>
-			</div>
-			<div>
-				<h1 class="text-2xl font-black italic tracking-tighter uppercase text-transparent bg-clip-text bg-linear-to-r from-white to-slate-400">ZINE GENERATOR</h1>
-				<p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Turn any PDF into a print-ready RPG zine.</p>
-			</div>
-		</div>
-		<div class="hidden md:flex items-center gap-8 text-xs font-bold text-slate-500 tracking-widest uppercase">
-			<a href="/" class="text-white">Generator</a>
-			<a href="/" class="hover:text-slate-300 transition-colors">Templates</a>
-			<a href="/" class="hover:text-slate-300 transition-colors">Guide</a>
-			<span class="text-slate-800">|</span>
-			<span class="text-slate-600">RPG Zine Utility</span>
-		</div>
-	</header>
-
 	<main class="max-w-7xl mx-auto p-4 lg:p-12 grid lg:grid-cols-12 gap-12">
 		<!-- Sidebar Controls -->
 		<aside class="lg:col-span-4 flex flex-col gap-8">
@@ -273,7 +253,7 @@
 						{#if view === 'print'}
 							{#if generatedPdfUrl}
 								<div class="w-full h-full overflow-y-auto pr-2 space-y-12 flex flex-col items-center custom-scrollbar">
-									{#each Array.from({ length: numImposedPages }) as _, i (i)}
+									{#each Array.from({ length: numImposedPages }, (_, i) => i) as i (i)}
 										{@const sheetNum = Math.floor(i / 2) + 1}
 										{@const isFront = i % 2 === 0}
 										
@@ -346,7 +326,6 @@
 			</div>
 		</section>
 	</main>
-</div>
 
 <style>
 	:global(body) {
