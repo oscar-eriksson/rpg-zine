@@ -66,7 +66,12 @@
 		}
 	}
 
-	function drawMarginGuides(ctx: CanvasRenderingContext2D, canvasW: number, canvasH: number, marginPx: number) {
+	function drawMarginGuides(
+		ctx: CanvasRenderingContext2D,
+		canvasW: number,
+		canvasH: number,
+		marginPx: number
+	) {
 		// Shade the margin zone
 		ctx.fillStyle = 'rgba(150, 80, 210, 0.07)';
 		ctx.fillRect(0, 0, canvasW, marginPx); // top
@@ -79,7 +84,12 @@
 		ctx.strokeStyle = 'rgba(150, 80, 210, 0.45)';
 		ctx.lineWidth = 1;
 		ctx.setLineDash([5, 4]);
-		ctx.strokeRect(marginPx + 0.5, marginPx + 0.5, canvasW - 2 * marginPx - 1, canvasH - 2 * marginPx - 1);
+		ctx.strokeRect(
+			marginPx + 0.5,
+			marginPx + 0.5,
+			canvasW - 2 * marginPx - 1,
+			canvasH - 2 * marginPx - 1
+		);
 		ctx.restore();
 	}
 
@@ -111,7 +121,7 @@
 
 		try {
 			// loadDocumentCached expects Uint8Array; pdfData is an ArrayBuffer
-		const doc = await loadDocumentCached(new Uint8Array(pdfData));
+			const doc = await loadDocumentCached(new Uint8Array(pdfData));
 			if (gens.get(canvas) !== gen) return;
 			const page = await doc.getPage(pageNum);
 			if (gens.get(canvas) !== gen) return;
@@ -153,23 +163,35 @@
 	$effect(() => {
 		const p = leftPage;
 		// Access margin options so sliders trigger a re-render
-		void options.printerMargin; void options.middleMargin; void options.size;
+		void options.printerMargin;
+		void options.middleMargin;
+		void options.size;
 		const c = untrack(() => leftCanvas);
 		if (c) renderPage(c, p);
 	});
 	$effect(() => {
 		const c = leftCanvas;
-		if (c) renderPage(c, untrack(() => leftPage));
+		if (c)
+			renderPage(
+				c,
+				untrack(() => leftPage)
+			);
 	});
 	$effect(() => {
 		const p = rightPage;
-		void options.printerMargin; void options.middleMargin; void options.size;
+		void options.printerMargin;
+		void options.middleMargin;
+		void options.size;
 		const c = untrack(() => rightCanvas);
 		if (c) renderPage(c, p);
 	});
 	$effect(() => {
 		const c = rightCanvas;
-		if (c) renderPage(c, untrack(() => rightPage));
+		if (c)
+			renderPage(
+				c,
+				untrack(() => rightPage)
+			);
 	});
 
 	async function goNext() {
@@ -195,8 +217,14 @@
 		flipDir = 'fwd';
 		isFlipping = true;
 		currentSpread = nextSpread;
-		setTimeout(() => { flipActiveSrc = backSrc; flipMirror = true; }, 350);
-		setTimeout(() => { isFlipping = false; flipMirror = false; }, 750);
+		setTimeout(() => {
+			flipActiveSrc = backSrc;
+			flipMirror = true;
+		}, 350);
+		setTimeout(() => {
+			isFlipping = false;
+			flipMirror = false;
+		}, 750);
 	}
 
 	async function goPrev() {
@@ -222,8 +250,14 @@
 		flipDir = 'bwd';
 		isFlipping = true;
 		currentSpread = prevSpread;
-		setTimeout(() => { flipActiveSrc = backSrc; flipMirror = true; }, 350);
-		setTimeout(() => { isFlipping = false; flipMirror = false; }, 750);
+		setTimeout(() => {
+			flipActiveSrc = backSrc;
+			flipMirror = true;
+		}, 350);
+		setTimeout(() => {
+			isFlipping = false;
+			flipMirror = false;
+		}, 750);
 	}
 
 	function handleKey(e: KeyboardEvent) {
@@ -269,7 +303,7 @@
 <canvas bind:this={stagingA} style="display:none" aria-hidden="true"></canvas>
 <canvas bind:this={stagingB} style="display:none" aria-hidden="true"></canvas>
 
-<div class="flex h-full w-full select-none flex-col items-center gap-4">
+<div class="flex h-full w-full flex-col items-center gap-4 select-none">
 	<!-- Navigation -->
 	<div class="flex shrink-0 items-center gap-6">
 		<button
@@ -296,7 +330,7 @@
 		</button>
 
 		<div class="text-center">
-			<div class="text-[10px] uppercase tracking-widest text-slate-500">Spread</div>
+			<div class="text-[10px] tracking-widest text-slate-500 uppercase">Spread</div>
 			<div class="flex items-baseline gap-1 text-base font-bold text-white tabular-nums">
 				<input
 					type="number"
@@ -304,12 +338,15 @@
 					max={totalSpreads}
 					value={currentSpread + 1}
 					onchange={(e) => {
-						const v = Math.max(1, Math.min(totalSpreads, parseInt((e.target as HTMLInputElement).value) || 1));
+						const v = Math.max(
+							1,
+							Math.min(totalSpreads, parseInt((e.target as HTMLInputElement).value) || 1)
+						);
 						(e.target as HTMLInputElement).value = String(v);
 						currentSpread = v - 1;
 					}}
 					onkeydown={(e) => e.stopPropagation()}
-					class="w-10 bg-transparent text-center text-base font-bold text-white outline-none [appearance:textfield] hover:text-purple-300 focus:text-purple-300 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+					class="w-10 [appearance:textfield] bg-transparent text-center text-base font-bold text-white outline-none hover:text-purple-300 focus:text-purple-300 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
 				/>
 				<span class="text-sm font-normal text-slate-500">/ {totalSpreads}</span>
 			</div>
@@ -340,7 +377,7 @@
 	</div>
 
 	<!-- Book scene -->
-	<div class="book-scene flex flex-1 w-full items-center justify-center pb-10">
+	<div class="book-scene flex w-full flex-1 items-center justify-center pb-10">
 		<div class="book-tilt">
 			<!-- Open book -->
 			<div class="book-open">
@@ -369,7 +406,9 @@
 					<div class={flipDir === 'fwd' ? 'flip-container flip-fwd' : 'flip-container flip-bwd'}>
 						<div class="flip-face" style={flipMirror ? 'transform: scaleX(-1)' : ''}>
 							<img src={flipActiveSrc} class="page-img" alt="" />
-							<div class="spine-shadow {flipDir === 'fwd' ? 'spine-shadow-r' : 'spine-shadow-l'}"></div>
+							<div
+								class="spine-shadow {flipDir === 'fwd' ? 'spine-shadow-r' : 'spine-shadow-l'}"
+							></div>
 						</div>
 					</div>
 				{/if}
@@ -402,7 +441,7 @@
 		{/if}
 	</div>
 
-	<p class="shrink-0 text-center text-[10px] italic text-slate-500">
+	<p class="shrink-0 text-center text-[10px] text-slate-500 italic">
 		Use ← → arrow keys to navigate. Labels show which physical sheet each page prints on.
 	</p>
 </div>

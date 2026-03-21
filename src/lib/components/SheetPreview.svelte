@@ -4,10 +4,14 @@
 	import { browser } from '$app/environment';
 	import type { RenderTask } from 'pdfjs-dist';
 
-	let { pdfBuffer, pageNumber, scale = 2 } = $props<{ 
-		pdfBuffer: ArrayBuffer | Uint8Array | null, 
-		pageNumber: number,
-		scale?: number
+	let {
+		pdfBuffer,
+		pageNumber,
+		scale = 2
+	} = $props<{
+		pdfBuffer: ArrayBuffer | Uint8Array | null;
+		pageNumber: number;
+		scale?: number;
 	}>();
 
 	let canvas: HTMLCanvasElement | null = $state(null);
@@ -111,21 +115,46 @@
 	});
 </script>
 
-<div class="relative w-full h-full flex items-center justify-center bg-white rounded shadow-sm overflow-hidden">
+<div
+	class="relative flex h-full w-full items-center justify-center overflow-hidden rounded bg-white shadow-sm"
+>
 	{#if isLoading}
-		<div class="absolute inset-0 flex flex-col items-center justify-center bg-slate-50/50 backdrop-blur-sm z-10">
-			<div class="w-8 h-8 border-4 border-purple-500/20 border-t-purple-500 rounded-full animate-spin mb-2"></div>
-			<p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Rendering...</p>
+		<div
+			class="absolute inset-0 z-10 flex flex-col items-center justify-center bg-slate-50/50 backdrop-blur-sm"
+		>
+			<div
+				class="mb-2 h-8 w-8 animate-spin rounded-full border-4 border-purple-500/20 border-t-purple-500"
+			></div>
+			<p class="text-[10px] font-bold tracking-widest text-slate-400 uppercase">Rendering...</p>
 		</div>
 	{/if}
 
 	{#if error}
-		<div class="absolute inset-0 flex flex-col items-center justify-center bg-red-50 p-4 text-center z-20">
-			<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-red-400 mb-2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-			<p class="text-xs font-bold text-red-500 uppercase tracking-widest mb-1">Render Error</p>
-			<p class="text-[10px] text-red-400 font-mono line-clamp-2">{error}</p>
+		<div
+			class="absolute inset-0 z-20 flex flex-col items-center justify-center bg-red-50 p-4 text-center"
+		>
+			<svg
+				xmlns="http://www.w3.org/2000/svg"
+				width="24"
+				height="24"
+				viewBox="0 0 24 24"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				class="mb-2 text-red-400"
+				><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line
+					x1="12"
+					y1="16"
+					x2="12.01"
+					y2="16"
+				/></svg
+			>
+			<p class="mb-1 text-xs font-bold tracking-widest text-red-500 uppercase">Render Error</p>
+			<p class="line-clamp-2 font-mono text-[10px] text-red-400">{error}</p>
 		</div>
 	{/if}
 
-	<canvas bind:this={canvas} class="max-w-full max-h-full object-contain"></canvas>
+	<canvas bind:this={canvas} class="max-h-full max-w-full object-contain"></canvas>
 </div>

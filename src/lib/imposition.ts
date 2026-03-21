@@ -10,19 +10,22 @@ export interface ImpositionOptions {
 
 const MM_TO_POINTS = 72 / 25.4;
 
-
 export async function getPageCount(pdfData: ArrayBuffer): Promise<number> {
 	const srcDoc = await PDFDocument.load(pdfData);
 	return srcDoc.getPageCount();
 }
 
-export async function impose(pdfData: ArrayBuffer, options: ImpositionOptions): Promise<Uint8Array> {
+export async function impose(
+	pdfData: ArrayBuffer,
+	options: ImpositionOptions
+): Promise<Uint8Array> {
 	const srcDoc = await PDFDocument.load(pdfData);
 	const srcPages = srcDoc.getPages();
 	let pageCount = srcPages.length;
 
 	// We'll calculate the virtual page count for imposition
-	pageCount = Math.ceil(pageCount / (options.size === 'A5' ? 4 : 8)) * (options.size === 'A5' ? 4 : 8);
+	pageCount =
+		Math.ceil(pageCount / (options.size === 'A5' ? 4 : 8)) * (options.size === 'A5' ? 4 : 8);
 
 	const outDoc = await PDFDocument.create();
 
@@ -49,11 +52,11 @@ async function drawPageInArea(
 
 	const srcPage = srcDoc.getPage(pageIndex);
 	const [embeddedPage] = await sheet.doc.embedPages([srcPage]);
-	
+
 	// Get visual (effective) dimensions
 	const { width: vW, height: vH } = srcPage.getSize();
 	const rotation = srcPage.getRotation().angle;
-	
+
 	const availWidth = width - (margins.left + margins.right);
 	const availHeight = height - (margins.top + margins.bottom);
 
@@ -68,12 +71,12 @@ async function drawPageInArea(
 	const centerX = x + margins.left + (availWidth - drawW) / 2;
 	const centerY = y + margins.bottom + (availHeight - drawH) / 2;
 
-	// We must account for the fact that pdf-lib's drawPage rotates around 
+	// We must account for the fact that pdf-lib's drawPage rotates around
 	// the provided (x, y) coordinates, which it treats as the bottom-left of the
 	// UNROTATED page content.
 	let drawX = centerX;
 	let drawY = centerY;
-	
+
 	// Use embeddedPage dimensions for the scaling, but rotation logic for position
 	const pW = embeddedPage.width;
 	const pH = embeddedPage.height;
@@ -92,11 +95,16 @@ async function drawPageInArea(
 		y: drawY,
 		width: pW * scale,
 		height: pH * scale,
-		rotate: degrees(rotation),
+		rotate: degrees(rotation)
 	});
 }
 
-async function imposeA5(srcDoc: PDFDocument, outDoc: PDFDocument, options: ImpositionOptions, pageCount: number) {
+async function imposeA5(
+	srcDoc: PDFDocument,
+	outDoc: PDFDocument,
+	options: ImpositionOptions,
+	pageCount: number
+) {
 	const numSheets = Math.ceil(pageCount / 4);
 
 	const margin = options.printerMargin * MM_TO_POINTS;
@@ -116,12 +124,21 @@ async function imposeA5(srcDoc: PDFDocument, outDoc: PDFDocument, options: Impos
 			bottom: margin
 		});
 		// Right page area: [420.94 + gutter/2 to 841.89]
-		await drawPageInArea(srcDoc, frontSheet, pFirst, 420.94 + gutter / 2, 0, 420.94 - gutter / 2, 595.27, {
-			left: 0,
-			right: margin,
-			top: margin,
-			bottom: margin
-		});
+		await drawPageInArea(
+			srcDoc,
+			frontSheet,
+			pFirst,
+			420.94 + gutter / 2,
+			0,
+			420.94 - gutter / 2,
+			595.27,
+			{
+				left: 0,
+				right: margin,
+				top: margin,
+				bottom: margin
+			}
+		);
 
 		// Back Side
 		const backSheet = outDoc.addPage([841.89, 595.27]);
@@ -134,16 +151,30 @@ async function imposeA5(srcDoc: PDFDocument, outDoc: PDFDocument, options: Impos
 			top: margin,
 			bottom: margin
 		});
-		await drawPageInArea(srcDoc, backSheet, pPenultimate, 420.94 + gutter / 2, 0, 420.94 - gutter / 2, 595.27, {
-			left: 0,
-			right: margin,
-			top: margin,
-			bottom: margin
-		});
+		await drawPageInArea(
+			srcDoc,
+			backSheet,
+			pPenultimate,
+			420.94 + gutter / 2,
+			0,
+			420.94 - gutter / 2,
+			595.27,
+			{
+				left: 0,
+				right: margin,
+				top: margin,
+				bottom: margin
+			}
+		);
 	}
 }
 
-async function imposeA6(srcDoc: PDFDocument, outDoc: PDFDocument, options: ImpositionOptions, pageCount: number) {
+async function imposeA6(
+	srcDoc: PDFDocument,
+	outDoc: PDFDocument,
+	options: ImpositionOptions,
+	pageCount: number
+) {
 	// A6 booklet: 4 pages per A4 side (2×2 grid), 8 pages per physical A4 sheet.
 	// Each A4 portrait sheet holds 4 A6 pages arranged as:
 	//   [Top-Left]  [Top-Right]
@@ -192,36 +223,45 @@ async function imposeA6(srcDoc: PDFDocument, outDoc: PDFDocument, options: Impos
 		const N = pageCount;
 
 		// Virtual page indices (0-based), formula derived from saddle-stitch ordering
-		const front_topRight = remap(4 * k - 4);        // p(4k-3)
-		const front_topLeft  = remap(N - 4 * k + 3);    // p(N-4k+4)
-		const front_botRight = remap(4 * k - 2);         // p(4k-1)
-		const front_botLeft  = remap(N - 4 * k + 1);    // p(N-4k+2)
+		const front_topRight = remap(4 * k - 4); // p(4k-3)
+		const front_topLeft = remap(N - 4 * k + 3); // p(N-4k+4)
+		const front_botRight = remap(4 * k - 2); // p(4k-1)
+		const front_botLeft = remap(N - 4 * k + 1); // p(N-4k+2)
 
-		const back_topLeft   = remap(4 * k - 3);         // p(4k-2)
-		const back_topRight  = remap(N - 4 * k + 2);    // p(N-4k+3)
-		const back_botLeft   = remap(4 * k - 1);         // p(4k)
-		const back_botRight  = remap(N - 4 * k);         // p(N-4k+1)
+		const back_topLeft = remap(4 * k - 3); // p(4k-2)
+		const back_topRight = remap(N - 4 * k + 2); // p(N-4k+3)
+		const back_botLeft = remap(4 * k - 1); // p(4k)
+		const back_botRight = remap(N - 4 * k); // p(N-4k+1)
 
 		// Front side
-		await drawPageInArea(srcDoc, frontSheet, front_topRight, halfW + gutter/2, halfH + gutter/2, cellW, cellH, {
-			left: 0,
-			right: margin,
-			top: margin,
-			bottom: margin
-		});
-		await drawPageInArea(srcDoc, frontSheet, front_topLeft,  0,                halfH + gutter/2, cellW, cellH, {
+		await drawPageInArea(
+			srcDoc,
+			frontSheet,
+			front_topRight,
+			halfW + gutter / 2,
+			halfH + gutter / 2,
+			cellW,
+			cellH,
+			{
+				left: 0,
+				right: margin,
+				top: margin,
+				bottom: margin
+			}
+		);
+		await drawPageInArea(srcDoc, frontSheet, front_topLeft, 0, halfH + gutter / 2, cellW, cellH, {
 			left: margin,
 			right: 0,
 			top: margin,
 			bottom: margin
 		});
-		await drawPageInArea(srcDoc, frontSheet, front_botRight, halfW + gutter/2, 0,                cellW, cellH, {
+		await drawPageInArea(srcDoc, frontSheet, front_botRight, halfW + gutter / 2, 0, cellW, cellH, {
 			left: 0,
 			right: margin,
 			top: margin,
 			bottom: margin
 		});
-		await drawPageInArea(srcDoc, frontSheet, front_botLeft,  0,                0,                cellW, cellH, {
+		await drawPageInArea(srcDoc, frontSheet, front_botLeft, 0, 0, cellW, cellH, {
 			left: margin,
 			right: 0,
 			top: margin,
@@ -229,25 +269,34 @@ async function imposeA6(srcDoc: PDFDocument, outDoc: PDFDocument, options: Impos
 		});
 
 		// Back side (left/right swap for duplex long-edge flip)
-		await drawPageInArea(srcDoc, backSheet, back_topLeft,  0,                halfH + gutter/2, cellW, cellH, {
+		await drawPageInArea(srcDoc, backSheet, back_topLeft, 0, halfH + gutter / 2, cellW, cellH, {
 			left: margin,
 			right: 0,
 			top: margin,
 			bottom: margin
 		});
-		await drawPageInArea(srcDoc, backSheet, back_topRight, halfW + gutter/2, halfH + gutter/2, cellW, cellH, {
-			left: 0,
-			right: margin,
-			top: margin,
-			bottom: margin
-		});
-		await drawPageInArea(srcDoc, backSheet, back_botLeft,  0,                0,                cellW, cellH, {
+		await drawPageInArea(
+			srcDoc,
+			backSheet,
+			back_topRight,
+			halfW + gutter / 2,
+			halfH + gutter / 2,
+			cellW,
+			cellH,
+			{
+				left: 0,
+				right: margin,
+				top: margin,
+				bottom: margin
+			}
+		);
+		await drawPageInArea(srcDoc, backSheet, back_botLeft, 0, 0, cellW, cellH, {
 			left: margin,
 			right: 0,
 			top: margin,
 			bottom: margin
 		});
-		await drawPageInArea(srcDoc, backSheet, back_botRight, halfW + gutter/2, 0,                cellW, cellH, {
+		await drawPageInArea(srcDoc, backSheet, back_botRight, halfW + gutter / 2, 0, cellW, cellH, {
 			left: 0,
 			right: margin,
 			top: margin,
@@ -256,26 +305,41 @@ async function imposeA6(srcDoc: PDFDocument, outDoc: PDFDocument, options: Impos
 	}
 }
 
-export async function createSpreadPdf(pdfData: ArrayBuffer, p1: number, p2: number | null, size: 'A5' | 'A6' = 'A5'): Promise<string> {
+export async function createSpreadPdf(
+	pdfData: ArrayBuffer,
+	p1: number,
+	p2: number | null,
+	size: 'A5' | 'A6' = 'A5'
+): Promise<string> {
 	const srcDoc = await PDFDocument.load(pdfData);
 	const outDoc = await PDFDocument.create();
-	
+
 	// A5 spread (2 A5 portrait) is A4 Landscape: 841.89 x 595.27
 	// A6 spread (2 A6 portrait) is A5 Landscape: 595.27 x 420.94
 	const width = size === 'A5' ? 841.89 : 595.27;
 	const height = size === 'A5' ? 595.27 : 420.94;
-	
+
 	const sheet = outDoc.addPage([width, height]);
 	const halfWidth = width / 2;
-	
+
 	if (p1 >= 0 && p1 < srcDoc.getPageCount()) {
-		await drawPageInArea(srcDoc, sheet, p1, 0, 0, halfWidth, height, { top: 0, right: 0, bottom: 0, left: 0 });
+		await drawPageInArea(srcDoc, sheet, p1, 0, 0, halfWidth, height, {
+			top: 0,
+			right: 0,
+			bottom: 0,
+			left: 0
+		});
 	}
-	
+
 	if (p2 !== null && p2 >= 0 && p2 < srcDoc.getPageCount()) {
-		await drawPageInArea(srcDoc, sheet, p2, halfWidth, 0, halfWidth, height, { top: 0, right: 0, bottom: 0, left: 0 });
+		await drawPageInArea(srcDoc, sheet, p2, halfWidth, 0, halfWidth, height, {
+			top: 0,
+			right: 0,
+			bottom: 0,
+			left: 0
+		});
 	}
-	
+
 	const bytes = await outDoc.save();
 	return URL.createObjectURL(new Blob([bytes.buffer as ArrayBuffer], { type: 'application/pdf' }));
 }

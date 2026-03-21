@@ -10,7 +10,7 @@ let pdfjsPromise: Promise<typeof import('pdfjs-dist')> | null = null;
 
 export async function getPdfjs() {
 	if (!browser) return null;
-	
+
 	if (!pdfjsPromise) {
 		pdfjsPromise = (async () => {
 			const pdfjs = await import('pdfjs-dist');
@@ -18,7 +18,7 @@ export async function getPdfjs() {
 			return pdfjs;
 		})();
 	}
-	
+
 	return pdfjsPromise;
 }
 
@@ -30,13 +30,13 @@ export async function loadDocument(data: ArrayBuffer | Uint8Array) {
 	// if it happens to be an ArrayBuffer and pdf.js decides to transfer it.
 	const dataCopy = data instanceof Uint8Array ? data.slice(0) : new Uint8Array(data).slice(0);
 
-	const loadingTask = pdfjs.getDocument({ 
+	const loadingTask = pdfjs.getDocument({
 		data: dataCopy,
 		// Explicitly disable buffer transferring if possible (though slice already handles it)
 		isEvalSupported: false,
-		useWorkerFetch: false,
+		useWorkerFetch: false
 	});
-	
+
 	return loadingTask.promise;
 }
 
@@ -64,7 +64,11 @@ export async function loadDocumentCached(data: Uint8Array): Promise<PDFDocumentP
 	if (fingerprint !== cachedDocFingerprint) {
 		// Buffer has changed — destroy the old document if any.
 		if (cachedDocPromise) {
-			cachedDocPromise.then(doc => doc.destroy()).catch(() => {/* ignore */});
+			cachedDocPromise
+				.then((doc) => doc.destroy())
+				.catch(() => {
+					/* ignore */
+				});
 		}
 		cachedDocFingerprint = fingerprint;
 		cachedDocPromise = loadDocument(data);
@@ -72,4 +76,3 @@ export async function loadDocumentCached(data: Uint8Array): Promise<PDFDocumentP
 
 	return cachedDocPromise!;
 }
-

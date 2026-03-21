@@ -14,30 +14,129 @@
 	let generatedPdfUrl = $state<string | null>(null);
 	let imposedPdfData = $state<Uint8Array | null>(null);
 	let view = $state<'print' | 'folded'>('print');
-	const filterAlgorithms = [
-		{ key: 'lighten',       label: 'Lighten',          sliderLabel: 'Brightness', filter: (t: number) => `grayscale(1) brightness(${1 + t})` },
-		{ key: 'bleach',        label: 'Bleach Out',        sliderLabel: 'Intensity',  filter: (t: number) => `grayscale(1) brightness(${1 + t * 0.5}) contrast(${1 + t * 1.2})` },
-		{ key: 'high-contrast', label: 'High Contrast',     sliderLabel: 'Contrast',   filter: (t: number) => `grayscale(1) contrast(${1 + t * 2.5})` },
-		{ key: 'newsprint',     label: 'Newsprint',         sliderLabel: 'Exposure',   filter: (t: number) => `grayscale(1) contrast(${1.4 + t * 0.8}) brightness(${1.1 + t * 0.25})` },
-		{ key: 'overexpose',    label: 'Overexpose',        sliderLabel: 'Wash',       filter: (t: number) => `grayscale(1) brightness(${1 + t * 2}) contrast(0.8)` },
-		{ key: 'sepia',         label: 'Sepia',             sliderLabel: 'Brightness', filter: (t: number) => `sepia(1) brightness(${1 + t * 0.8})` },
-		{ key: 'invert',        label: 'Invert (Dark BG)',  sliderLabel: 'Brightness', filter: (t: number) => `grayscale(1) invert(1) brightness(${1 + t * 0.5})` },
+	const bwAlgorithms = [
+		{
+			key: 'lighten',
+			label: 'Lighten',
+			sliderLabel: 'Brightness',
+			desc: 'Brightens uniformly. Safe starting point.',
+			filter: (t: number) => `grayscale(1) brightness(${1 + t})`
+		},
+		{
+			key: 'bleach',
+			label: 'Bleach Out',
+			sliderLabel: 'Intensity',
+			desc: 'Blows out lights, keeps darks crisp. Great for backgrounds.',
+			filter: (t: number) => `grayscale(1) brightness(${1 + t * 0.5}) contrast(${1 + t * 1.2})`
+		},
+		{
+			key: 'high-contrast',
+			label: 'High Contrast',
+			sliderLabel: 'Contrast',
+			desc: 'Pushes grays to black or white. Bold, graphic look.',
+			filter: (t: number) => `grayscale(1) contrast(${1 + t * 2.5})`
+		},
+		{
+			key: 'newsprint',
+			label: 'Newsprint',
+			sliderLabel: 'Exposure',
+			desc: 'Punchy contrast with slight exposure boost. Classic print feel.',
+			filter: (t: number) => `grayscale(1) contrast(${1.4 + t * 0.8}) brightness(${1.1 + t * 0.25})`
+		},
+		{
+			key: 'overexpose',
+			label: 'Overexpose',
+			sliderLabel: 'Wash',
+			desc: 'Aggressively washes out mid-tones. Saves ink.',
+			filter: (t: number) => `grayscale(1) brightness(${1 + t * 2}) contrast(0.8)`
+		},
+		{
+			key: 'sepia',
+			label: 'Sepia',
+			sliderLabel: 'Brightness',
+			desc: 'Warm brownish tone. Vintage or aged document feel.',
+			filter: (t: number) => `sepia(1) brightness(${1 + t * 0.8})`
+		},
+		{
+			key: 'invert',
+			label: 'Invert (Dark BG)',
+			sliderLabel: 'Brightness',
+			desc: 'White-on-black. For designs with dark backgrounds.',
+			filter: (t: number) => `grayscale(1) invert(1) brightness(${1 + t * 0.5})`
+		}
+	];
+	const colorAlgorithms = [
+		{
+			key: 'bleach-warm',
+			label: 'Bleach Warm',
+			sliderLabel: 'Intensity',
+			desc: 'Washes out yellow/warm backgrounds toward white.',
+			filter: (t: number) =>
+				`brightness(${1 + t * 0.6}) saturate(${Math.max(0, 1 - t * 0.7).toFixed(2)}) contrast(${1 + t * 0.1})`
+		},
+		{
+			key: 'vivid',
+			label: 'Vivid',
+			sliderLabel: 'Punch',
+			desc: 'Boosts saturation and contrast. Pops flat colors.',
+			filter: (t: number) => `saturate(${1 + t * 2}) contrast(${1 + t * 0.4})`
+		},
+		{
+			key: 'cool',
+			label: 'Cool',
+			sliderLabel: 'Amount',
+			desc: 'Shifts hues cooler. Reduces warm or yellow cast.',
+			filter: (t: number) => `hue-rotate(${(t * 20).toFixed(1)}deg) brightness(${1 + t * 0.05})`
+		},
+		{
+			key: 'warm',
+			label: 'Warm',
+			sliderLabel: 'Amount',
+			desc: 'Shifts hues warmer. Adds a golden tone to cool images.',
+			filter: (t: number) =>
+				`hue-rotate(${(-t * 15).toFixed(1)}deg) saturate(${1 + t * 0.4}) brightness(${1 + t * 0.05})`
+		}
 	];
 
 	const PREFS_KEY = 'rpg-zine-prefs';
-	type Prefs = { A5?: { printerMargin: number; middleMargin: number }; A6?: { printerMargin: number; middleMargin: number }; bwMode?: boolean; filterAlgorithm?: string; filterStrength?: number };
-	function loadPrefs(): Prefs { if (!browser) return {}; try { return JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}'); } catch { return {}; } }
-	function savePrefs(patch: Partial<Prefs>) { if (!browser) return; try { localStorage.setItem(PREFS_KEY, JSON.stringify({ ...loadPrefs(), ...patch })); } catch {} }
+	type Prefs = {
+		A5?: { printerMargin: number; middleMargin: number };
+		A6?: { printerMargin: number; middleMargin: number };
+		filterMode?: 'none' | 'color' | 'bw';
+		bwAlgorithm?: string;
+		colorAlgorithm?: string;
+		filterStrength?: number;
+	};
+	function loadPrefs(): Prefs {
+		if (!browser) return {};
+		try {
+			return JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}');
+		} catch {
+			return {};
+		}
+	}
+	function savePrefs(patch: Partial<Prefs>) {
+		if (!browser) return;
+		try {
+			localStorage.setItem(PREFS_KEY, JSON.stringify({ ...loadPrefs(), ...patch }));
+		} catch {
+			/* ignore quota/private-browsing errors */
+		}
+	}
 
-	let bwMode = $state(false);
-	let filterAlgorithm = $state('lighten');
+	let filterMode = $state<'none' | 'color' | 'bw'>('none');
+	let bwAlgorithm = $state('lighten');
+	let colorAlgorithm = $state('bleach-warm');
 	let filterStrength = $state(0);
 	let algoDropdownOpen = $state(false);
 	let prefsReady = $state(false);
 
-	let currentAlgo = $derived(filterAlgorithms.find(a => a.key === filterAlgorithm) ?? filterAlgorithms[0]);
-	let previewFilter = $derived(bwMode ? currentAlgo.filter(filterStrength / 100) : '');
-
+	let currentAlgos = $derived(filterMode === 'bw' ? bwAlgorithms : colorAlgorithms);
+	let currentAlgoKey = $derived(filterMode === 'bw' ? bwAlgorithm : colorAlgorithm);
+	let currentAlgo = $derived(currentAlgos.find((a) => a.key === currentAlgoKey) ?? currentAlgos[0]);
+	let previewFilter = $derived(
+		filterMode !== 'none' ? currentAlgo.filter(filterStrength / 100) : ''
+	);
 	let options = $state<ImpositionOptions>({
 		size: 'A5',
 		printerMargin: 5,
@@ -46,9 +145,81 @@
 		backToBack: false
 	});
 
+	let exportFileName = $derived(
+		(pdfName.replace(/\.pdf$/i, '') || 'zine') +
+			'_zine_' +
+			options.size.toLowerCase() +
+			(filterMode !== 'none' ? `_${filterMode}_${filterStrength}` : '') +
+			'.pdf'
+	);
+
 	let previewAspect = $derived(options.size === 'A5' ? 'aspect-[1.414/1]' : 'aspect-[1/1.414]');
 
 	let numImposedPages = $state(0);
+	let isExporting = $state(false);
+	let exportCurrent = $state(0);
+	let exportTotal = $state(0);
+	let exportDpi = $state(216); // 144=draft, 216=standard, 288=high
+
+	async function downloadPdf() {
+		if (!imposedPdfData || !generatedPdfUrl) return;
+		if (filterMode === 'none') {
+			const link = document.createElement('a');
+			link.href = generatedPdfUrl;
+			link.download = exportFileName;
+			link.click();
+			return;
+		}
+		isExporting = true;
+		exportCurrent = 0;
+		try {
+			const { loadDocument } = await import('$lib/pdf');
+			const { PDFDocument } = await import('pdf-lib');
+			const doc = await loadDocument(imposedPdfData);
+			exportTotal = doc.numPages;
+			const outDoc = await PDFDocument.create();
+			const scale = exportDpi / 72;
+			for (let i = 1; i <= doc.numPages; i++) {
+				exportCurrent = i;
+				const page = await doc.getPage(i);
+				const viewport = page.getViewport({ scale });
+				const srcCanvas = document.createElement('canvas');
+				srcCanvas.width = Math.round(viewport.width);
+				srcCanvas.height = Math.round(viewport.height);
+				const srcCtx = srcCanvas.getContext('2d')!;
+				await page.render({ canvasContext: srcCtx, viewport, canvas: srcCanvas }).promise;
+				const dstCanvas = document.createElement('canvas');
+				dstCanvas.width = srcCanvas.width;
+				dstCanvas.height = srcCanvas.height;
+				const dstCtx = dstCanvas.getContext('2d')!;
+				dstCtx.filter = previewFilter;
+				dstCtx.drawImage(srcCanvas, 0, 0);
+				const blob = await new Promise<Blob>((resolve, reject) =>
+					dstCanvas.toBlob(
+						(b) => (b ? resolve(b) : reject(new Error('toBlob failed'))),
+						'image/jpeg',
+						0.92
+					)
+				);
+				const img = await outDoc.embedJpg(await blob.arrayBuffer());
+				const outPage = outDoc.addPage([srcCanvas.width, srcCanvas.height]);
+				outPage.drawImage(img, { x: 0, y: 0, width: srcCanvas.width, height: srcCanvas.height });
+			}
+			const bytes = new Uint8Array(await outDoc.save());
+			const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+			const link = document.createElement('a');
+			link.href = url;
+			link.download = exportFileName;
+			link.click();
+			setTimeout(() => URL.revokeObjectURL(url), 5000);
+		} catch (e) {
+			console.error('Filter export failed:', e);
+		} finally {
+			isExporting = false;
+			exportCurrent = 0;
+			exportTotal = 0;
+		}
+	}
 	let visiblePages = new SvelteSet<number>();
 
 	function lazyPage(node: HTMLElement, index: number) {
@@ -89,7 +260,10 @@
 		// Reset so stale A5 data doesn't show while A6 generates
 		imposedPdfData = null;
 		visiblePages.clear();
-		if (generatedPdfUrl) { URL.revokeObjectURL(generatedPdfUrl); generatedPdfUrl = null; }
+		if (generatedPdfUrl) {
+			URL.revokeObjectURL(generatedPdfUrl);
+			generatedPdfUrl = null;
+		}
 		try {
 			const result = await impose(pdfData.slice(0), options);
 			const blob = new Blob([result.buffer as ArrayBuffer], { type: 'application/pdf' });
@@ -129,312 +303,599 @@
 		if (prefsReady) savePrefs({ [size]: { printerMargin, middleMargin } });
 	});
 	$effect(() => {
-		const bw = bwMode, algo = filterAlgorithm, strength = filterStrength;
-		if (prefsReady) savePrefs({ bwMode: bw, filterAlgorithm: algo, filterStrength: strength });
+		const mode = filterMode,
+			bwAlgo = bwAlgorithm,
+			colorAlgo = colorAlgorithm,
+			strength = filterStrength;
+		if (prefsReady)
+			savePrefs({
+				filterMode: mode,
+				bwAlgorithm: bwAlgo,
+				colorAlgorithm: colorAlgo,
+				filterStrength: strength
+			});
 	});
 
 	onMount(() => {
 		const prefs = loadPrefs();
 		const size = options.size;
 		const sp = prefs[size];
-		if (sp) { options.printerMargin = sp.printerMargin; options.middleMargin = sp.middleMargin; }
-		if (prefs.bwMode !== undefined) bwMode = prefs.bwMode;
-		if (prefs.filterAlgorithm) filterAlgorithm = prefs.filterAlgorithm;
+		if (sp) {
+			options.printerMargin = sp.printerMargin;
+			options.middleMargin = sp.middleMargin;
+		}
+		if (prefs.filterMode) filterMode = prefs.filterMode;
+		if (prefs.bwAlgorithm) bwAlgorithm = prefs.bwAlgorithm;
+		if (prefs.colorAlgorithm) colorAlgorithm = prefs.colorAlgorithm;
 		if (prefs.filterStrength !== undefined) filterStrength = prefs.filterStrength;
 		prefsReady = true;
-		return () => { if (generatedPdfUrl) URL.revokeObjectURL(generatedPdfUrl); };
+		return () => {
+			if (generatedPdfUrl) URL.revokeObjectURL(generatedPdfUrl);
+		};
 	});
 </script>
 
-	<main class="max-w-7xl mx-auto p-4 lg:p-12 grid lg:grid-cols-12 gap-12">
-		<!-- Sidebar Controls -->
-		<aside class="lg:col-span-4 flex flex-col gap-8">
-			<div class="bg-slate-900/50 border border-slate-800 rounded-3xl p-8 backdrop-blur-sm">
-				<h2 class="text-lg font-bold mb-8 flex items-center gap-2">
-					<span class="w-1.5 h-6 bg-purple-500 rounded-full"></span>
-					Settings
-				</h2>
+<main class="mx-auto grid max-w-7xl gap-12 p-4 lg:grid-cols-12 lg:p-12">
+	<!-- Sidebar Controls -->
+	<aside class="flex flex-col gap-8 lg:col-span-4">
+		<div class="rounded-3xl border border-slate-800 bg-slate-900/50 p-8 backdrop-blur-sm">
+			<h2 class="mb-8 flex items-center gap-2 text-lg font-bold">
+				<span class="h-6 w-1.5 rounded-full bg-purple-500"></span>
+				Settings
+			</h2>
 
-				<!-- File Upload -->
-				<div class="mb-10 group">
-					<label for="pdf-upload" class="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-4 group-hover:text-slate-400 transition-colors">Source PDF</label>
-					<div class="relative">
-						<input 
-							type="file" 
-							accept=".pdf" 
-							onchange={handleFileUpload}
-							class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-							id="pdf-upload"
-						/>
-						<div class="border-2 border-dashed border-slate-700 rounded-2xl p-8 transition-all group-hover:border-purple-500/50 group-hover:bg-purple-500/5 flex flex-col items-center justify-center gap-3">
-							{#if pdfName}
-								<div class="w-12 h-12 bg-purple-500/10 rounded-xl flex items-center justify-center text-purple-400">
-									<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
-								</div>
-								<p class="text-sm font-bold text-slate-200 text-center line-clamp-1 px-4">{pdfName}</p>
-								<p class="text-[10px] text-slate-500 font-mono">{(pdfData?.byteLength || 0) / 1024 / 1024 > 1 ? ((pdfData?.byteLength || 0) / 1024 / 1024).toFixed(2) + ' MB' : ((pdfData?.byteLength || 0) / 1024).toFixed(0) + ' KB'}</p>
-							{:else}
-								<div class="w-12 h-12 bg-slate-800 rounded-xl flex items-center justify-center text-slate-600">
-									<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-								</div>
-								<p class="text-xs font-bold text-slate-500">Drop PDF or Click to Upload</p>
-							{/if}
-						</div>
+			<!-- File Upload -->
+			<div class="group mb-10">
+				<label
+					for="pdf-upload"
+					class="mb-4 block text-xs font-bold tracking-widest text-slate-500 uppercase transition-colors group-hover:text-slate-400"
+					>Source PDF</label
+				>
+				<div class="relative">
+					<input
+						type="file"
+						accept=".pdf"
+						onchange={handleFileUpload}
+						class="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0"
+						id="pdf-upload"
+					/>
+					<div
+						class="flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-slate-700 p-8 transition-all group-hover:border-purple-500/50 group-hover:bg-purple-500/5"
+					>
+						{#if pdfName}
+							<div
+								class="flex h-12 w-12 items-center justify-center rounded-xl bg-purple-500/10 text-purple-400"
+							>
+								<svg
+									xmlns="http://www.w3.org/2000/svg"
+									width="24"
+									height="24"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									><path
+										d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"
+									/><polyline points="14 2 14 8 20 8" /></svg
+								>
+							</div>
+							<p class="line-clamp-1 px-4 text-center text-sm font-bold text-slate-200">
+								{pdfName}
+							</p>
+							<p class="font-mono text-[10px] text-slate-500">
+								{(pdfData?.byteLength || 0) / 1024 / 1024 > 1
+									? ((pdfData?.byteLength || 0) / 1024 / 1024).toFixed(2) + ' MB'
+									: ((pdfData?.byteLength || 0) / 1024).toFixed(0) + ' KB'}
+							</p>
+						{:else}
+							<div
+								class="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-800 text-slate-600"
+							>
+								<svg
+									xmlns="http://www.w3.org/2000/svg"
+									width="24"
+									height="24"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline
+										points="17 8 12 3 7 8"
+									/><line x1="12" y1="3" x2="12" y2="15" /></svg
+								>
+							</div>
+							<p class="text-xs font-bold text-slate-500">Drop PDF or Click to Upload</p>
+						{/if}
 					</div>
 				</div>
+			</div>
 
-				<!-- Zine Size Selection -->
-				<div class="mb-10">
-					<span class="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Zine Size</span>
-					<div class="grid grid-cols-2 gap-4">
-						{#each ['A5', 'A6'] as size (size)}
-							<button 
-								onclick={() => { const s = size as 'A5' | 'A6'; options.size = s; const sp = loadPrefs()[s]; if (sp) { options.printerMargin = sp.printerMargin; options.middleMargin = sp.middleMargin; } }}
-								class="py-4 px-6 rounded-2xl border-2 font-black transition-all group overflow-hidden relative {options.size === size ? 'border-purple-500 bg-purple-500/10 text-white shadow-lg shadow-purple-500/10' : 'border-slate-800 text-slate-600 hover:border-slate-700 hover:text-slate-400'}"
+			<!-- Zine Size Selection -->
+			<div class="mb-10">
+				<span class="mb-4 block text-xs font-bold tracking-widest text-slate-500 uppercase"
+					>Zine Size</span
+				>
+				<div class="grid grid-cols-2 gap-4">
+					{#each ['A5', 'A6'] as size (size)}
+						<button
+							onclick={() => {
+								const s = size as 'A5' | 'A6';
+								options.size = s;
+								const sp = loadPrefs()[s];
+								if (sp) {
+									options.printerMargin = sp.printerMargin;
+									options.middleMargin = sp.middleMargin;
+								}
+							}}
+							class="group relative overflow-hidden rounded-2xl border-2 px-6 py-4 font-black transition-all {options.size ===
+							size
+								? 'border-purple-500 bg-purple-500/10 text-white shadow-lg shadow-purple-500/10'
+								: 'border-slate-800 text-slate-600 hover:border-slate-700 hover:text-slate-400'}"
+						>
+							<span class="relative z-10">{size}</span>
+							{#if options.size === size}
+								<div
+									class="absolute inset-0 bg-linear-to-br from-purple-500/5 to-transparent"
+								></div>
+							{/if}
+						</button>
+					{/each}
+				</div>
+			</div>
+
+			<!-- Margin Controls -->
+			<div class="mb-10 space-y-8">
+				<div class="group">
+					<div class="mb-4 flex items-center justify-between">
+						<label
+							for="printer-margin"
+							class="text-xs font-bold tracking-widest text-slate-500 uppercase transition-colors group-hover:text-slate-400"
+							>Printer Margin</label
+						>
+						<span class="rounded bg-purple-500/5 px-2 py-0.5 font-mono text-[10px] text-purple-500"
+							>{options.printerMargin}mm</span
+						>
+					</div>
+					<input
+						id="printer-margin"
+						type="range"
+						bind:value={options.printerMargin}
+						min="0"
+						max="20"
+						class="h-1.5 w-full cursor-pointer appearance-none rounded-lg bg-slate-800 accent-purple-500"
+					/>
+				</div>
+				<div class="group">
+					<div class="mb-4 flex items-center justify-between">
+						<label
+							for="gutter-margin"
+							class="text-xs font-bold tracking-widest text-slate-500 uppercase transition-colors group-hover:text-slate-400"
+							>Gutter (Middle)</label
+						>
+						<span class="rounded bg-purple-500/5 px-2 py-0.5 font-mono text-[10px] text-purple-500"
+							>{options.middleMargin}mm</span
+						>
+					</div>
+					<input
+						id="gutter-margin"
+						type="range"
+						bind:value={options.middleMargin}
+						min="0"
+						max="40"
+						class="h-1.5 w-full cursor-pointer appearance-none rounded-lg bg-slate-800 accent-purple-500"
+					/>
+				</div>
+			</div>
+
+			<!-- Print Filter -->
+			<div class="mb-8 space-y-6">
+				<div>
+					<span class="mb-3 block text-xs font-bold tracking-widest text-slate-500 uppercase"
+						>Print Filter</span
+					>
+					<div class="grid grid-cols-3 gap-2">
+						{#each [['none', 'None'], ['color', 'Color'], ['bw', 'B&W']] as const as [mode, label] (mode)}
+							<button
+								onclick={() => {
+									filterMode = mode;
+									algoDropdownOpen = false;
+								}}
+								class="rounded-xl border-2 py-2.5 text-[10px] font-black transition-all {filterMode ===
+								mode
+									? 'border-purple-500 bg-purple-500/10 text-white'
+									: 'border-slate-800 text-slate-600 hover:border-slate-700 hover:text-slate-400'}"
+								>{label}</button
 							>
-								<span class="relative z-10">{size}</span>
-								{#if options.size === size}
-									<div class="absolute inset-0 bg-linear-to-br from-purple-500/5 to-transparent"></div>
-								{/if}
-							</button>
 						{/each}
 					</div>
 				</div>
 
-				<!-- Margin Controls -->
-				<div class="mb-10 space-y-8">
-					<div class="group">
-						<div class="flex justify-between items-center mb-4">
-							<label for="printer-margin" class="text-xs font-bold text-slate-500 uppercase tracking-widest group-hover:text-slate-400 transition-colors">Printer Margin</label>
-							<span class="text-[10px] font-mono text-purple-500 bg-purple-500/5 px-2 py-0.5 rounded">{options.printerMargin}mm</span>
-						</div>
-						<input id="printer-margin" type="range" bind:value={options.printerMargin} min="0" max="20" class="w-full accent-purple-500 h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer" />
-					</div>
-					<div class="group">
-						<div class="flex justify-between items-center mb-4">
-							<label for="gutter-margin" class="text-xs font-bold text-slate-500 uppercase tracking-widest group-hover:text-slate-400 transition-colors">Gutter (Middle)</label>
-							<span class="text-[10px] font-mono text-purple-500 bg-purple-500/5 px-2 py-0.5 rounded">{options.middleMargin}mm</span>
-						</div>
-						<input id="gutter-margin" type="range" bind:value={options.middleMargin} min="0" max="40" class="w-full accent-purple-500 h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer" />
-					</div>
-				</div>
-
-		<!-- B&W / Print Filter -->
-				<div class="mb-8 space-y-6">
-					<label class="flex items-center gap-3 cursor-pointer group">
-						<div class="relative">
-							<input type="checkbox" bind:checked={bwMode} class="sr-only peer" />
-							<div class="w-11 h-6 bg-slate-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
-						</div>
-						<span class="text-sm font-medium text-slate-400 group-hover:text-slate-300 transition-colors">Black &amp; White Mode</span>
-					</label>
-					{#if bwMode}
-						<div class="space-y-6">
-							<div>
-								<span class="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Algorithm</span>
-								<div class="relative">
-									<button
-										onclick={(e) => { e.stopPropagation(); algoDropdownOpen = !algoDropdownOpen; }}
-										class="w-full flex items-center justify-between gap-2 bg-slate-800 border border-slate-700 hover:border-slate-600 text-slate-300 text-xs font-bold rounded-xl px-4 py-3 transition-colors {algoDropdownOpen ? 'border-purple-500/50' : ''}"
+				{#if filterMode !== 'none'}
+					<div class="space-y-6">
+						<div>
+							<span class="mb-3 block text-xs font-bold tracking-widest text-slate-500 uppercase"
+								>Algorithm</span
+							>
+							<div class="relative">
+								<button
+									onclick={(e) => {
+										e.stopPropagation();
+										algoDropdownOpen = !algoDropdownOpen;
+									}}
+									class="flex w-full items-center justify-between gap-2 rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-xs font-bold text-slate-300 transition-colors hover:border-slate-600 {algoDropdownOpen
+										? 'border-purple-500/50'
+										: ''}"
+								>
+									<span>{currentAlgo.label}</span>
+									<svg
+										xmlns="http://www.w3.org/2000/svg"
+										width="12"
+										height="12"
+										viewBox="0 0 24 24"
+										fill="none"
+										stroke="currentColor"
+										stroke-width="2.5"
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										class="text-slate-500 transition-transform {algoDropdownOpen
+											? 'rotate-180'
+											: ''}"><path d="m6 9 6 6 6-6" /></svg
 									>
-										<span>{currentAlgo.label}</span>
-										<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-slate-500 transition-transform {algoDropdownOpen ? 'rotate-180' : ''}"><path d="m6 9 6 6 6-6"/></svg>
-									</button>
-									{#if algoDropdownOpen}
-										<div class="fixed inset-0 z-40" onclick={() => algoDropdownOpen = false} aria-hidden="true"></div>
-										<div class="absolute top-full left-0 right-0 mt-1.5 bg-slate-900 border border-slate-700 rounded-xl overflow-hidden z-50 shadow-2xl shadow-black/50">
-											{#each filterAlgorithms as algo (algo.key)}
-												<button
-													onclick={() => { filterAlgorithm = algo.key; algoDropdownOpen = false; }}
-													class="w-full text-left px-4 py-2.5 text-xs font-bold transition-colors flex items-center gap-3
-														{filterAlgorithm === algo.key
-															? 'bg-purple-500/10 text-purple-300 border-l-2 border-purple-500'
-															: 'text-slate-400 hover:bg-slate-800 hover:text-slate-200 border-l-2 border-transparent'}"
+								</button>
+								{#if algoDropdownOpen}
+									<div
+										class="fixed inset-0 z-40"
+										onclick={() => (algoDropdownOpen = false)}
+										aria-hidden="true"
+									></div>
+									<div
+										class="absolute top-full right-0 left-0 z-50 mt-1.5 overflow-hidden rounded-xl border border-slate-700 bg-slate-900 shadow-2xl shadow-black/50"
+									>
+										{#each currentAlgos as algo (algo.key)}
+											<button
+												onclick={() => {
+													if (filterMode === 'bw') bwAlgorithm = algo.key;
+													else colorAlgorithm = algo.key;
+													algoDropdownOpen = false;
+												}}
+												class="flex w-full flex-col items-start gap-0 px-4 py-2.5 text-left text-xs font-bold transition-colors
+														{currentAlgoKey === algo.key
+													? 'border-l-2 border-purple-500 bg-purple-500/10 text-purple-300'
+													: 'border-l-2 border-transparent text-slate-400 hover:bg-slate-800 hover:text-slate-200'}"
+											>
+												<span>{algo.label}</span>
+												<span class="mt-0.5 block text-[10px] leading-tight font-normal opacity-50"
+													>{algo.desc}</span
 												>
-													{algo.label}
-												</button>
-											{/each}
-										</div>
-									{/if}
-								</div>
-							</div>
-							<div class="group">
-								<div class="flex justify-between items-center mb-4">
-									<label for="filter-strength" class="text-xs font-bold text-slate-500 uppercase tracking-widest group-hover:text-slate-400 transition-colors">{currentAlgo.sliderLabel}</label>
-									<span class="text-[10px] font-mono text-purple-500 bg-purple-500/5 px-2 py-0.5 rounded">{filterStrength}%</span>
-								</div>
-								<input id="filter-strength" type="range" bind:value={filterStrength} min="0" max="100" class="w-full accent-purple-500 h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer" />
+											</button>
+										{/each}
+									</div>
+								{/if}
 							</div>
 						</div>
-					{/if}
-				</div>
+						<div class="group">
+							<div class="mb-4 flex items-center justify-between">
+								<label
+									for="filter-strength"
+									class="text-xs font-bold tracking-widest text-slate-500 uppercase transition-colors group-hover:text-slate-400"
+									>{currentAlgo.sliderLabel}</label
+								>
+								<span
+									class="rounded bg-purple-500/5 px-2 py-0.5 font-mono text-[10px] text-purple-500"
+									>{filterStrength}%</span
+								>
+							</div>
+							<input
+								id="filter-strength"
+								type="range"
+								bind:value={filterStrength}
+								min="0"
+								max="100"
+								class="h-1.5 w-full cursor-pointer appearance-none rounded-lg bg-slate-800 accent-purple-500"
+							/>
+						</div>
+					</div>
+				{/if}
 
-				<!-- View Switcher -->
-				<div class="p-1 bg-slate-900 rounded-xl border border-slate-700/50 flex mb-8">
-					<button 
-						onclick={() => view = 'print'}
-						class="flex-1 py-2 rounded-lg text-xs font-bold transition-all {view === 'print' ? 'bg-slate-800 text-white shadow-lg' : 'text-slate-500 hover:text-slate-400'}"
-					>
-						PRINT SHEETS
-					</button>
-					<button 
-						onclick={() => view = 'folded'}
-						class="flex-1 py-2 rounded-lg text-xs font-bold transition-all {view === 'folded' ? 'bg-slate-800 text-white shadow-lg' : 'text-slate-500 hover:text-slate-400'}"
-					>
-						FOLDED PREVIEW
-					</button>
-				</div>
-
-				<div class="mb-8">
-					<AssemblyGuide size={options.size} duplex={true} />
-				</div>
-
-				<!-- Assembly Guide / Instructions -->
-				<div class="p-4 bg-slate-900/50 rounded-xl border border-slate-700/50 text-xs text-slate-500 leading-relaxed">
-					<p class="font-bold text-slate-400 mb-1 flex items-center gap-1">
-						<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-						Assembly Info
-					</p>
-					{#if options.size === 'A5'}
-						Print double-sided (flip on long edge). Fold in half and staple in the middle.
-					{:else}
-						Print double-sided (flip on long edge). Cut A4 sheets in half horizontally. Stack and fold.
-					{/if}
+				<!-- Export Quality — always visible, disabled when no filter -->
+				<div class={filterMode !== 'none' ? '' : 'pointer-events-none opacity-40'}>
+					<div class="mb-3 flex items-center justify-between">
+						<span class="text-xs font-bold tracking-widest text-slate-500 uppercase"
+							>Export Quality</span
+						>
+						{#if filterMode === 'none'}
+							<span class="rounded bg-slate-800 px-2 py-0.5 font-mono text-[10px] text-slate-500"
+								>Vector ∞ DPI</span
+							>
+						{/if}
+					</div>
+					<div class="grid grid-cols-3 gap-2">
+						{#each [{ dpi: 144, label: 'Draft' }, { dpi: 216, label: 'Standard' }, { dpi: 288, label: 'High' }] as preset (preset.dpi)}
+							<button
+								onclick={() => (exportDpi = preset.dpi)}
+								disabled={filterMode === 'none'}
+								class="flex flex-col items-center gap-0.5 rounded-xl border-2 px-2 py-2 text-[10px] font-black transition-all {exportDpi ===
+									preset.dpi && filterMode !== 'none'
+									? 'border-purple-500 bg-purple-500/10 text-white'
+									: 'border-slate-800 text-slate-600'}"
+							>
+								<span>{preset.label}</span>
+								<span class="font-mono opacity-60">{preset.dpi}dpi</span>
+							</button>
+						{/each}
+					</div>
 				</div>
 			</div>
 
-			<!-- Quick Downloader -->
-			<button
-				onclick={() => { if (generatedPdfUrl) {
-					const link = document.createElement('a');
-					link.href = generatedPdfUrl;
-					link.download = 'zine-print-ready.pdf';
-					link.click();
-				}}}
-				disabled={!generatedPdfUrl || isProcessing}
-				class="w-full py-4 bg-linear-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-600 disabled:cursor-not-allowed text-white rounded-2xl font-black text-center block transition-all shadow-lg shadow-purple-500/20"
+			<!-- View Switcher -->
+			<div class="mb-8 flex rounded-xl border border-slate-700/50 bg-slate-900 p-1">
+				<button
+					onclick={() => (view = 'print')}
+					class="flex-1 rounded-lg py-2 text-xs font-bold transition-all {view === 'print'
+						? 'bg-slate-800 text-white shadow-lg'
+						: 'text-slate-500 hover:text-slate-400'}"
+				>
+					PRINT SHEETS
+				</button>
+				<button
+					onclick={() => (view = 'folded')}
+					class="flex-1 rounded-lg py-2 text-xs font-bold transition-all {view === 'folded'
+						? 'bg-slate-800 text-white shadow-lg'
+						: 'text-slate-500 hover:text-slate-400'}"
+				>
+					FOLDED PREVIEW
+				</button>
+			</div>
+
+			<div class="mb-8">
+				<AssemblyGuide size={options.size} duplex={true} />
+			</div>
+
+			<!-- Assembly Guide / Instructions -->
+			<div
+				class="rounded-xl border border-slate-700/50 bg-slate-900/50 p-4 text-xs leading-relaxed text-slate-500"
 			>
-				{isProcessing ? 'GENERATING...' : 'DOWNLOAD PDF'}
-			</button>
-		</aside>
+				<p class="mb-1 flex items-center gap-1 font-bold text-slate-400">
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						width="14"
+						height="14"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line
+							x1="12"
+							y1="8"
+							x2="12.01"
+							y2="8"
+						/></svg
+					>
+					Assembly Info
+				</p>
+				{#if options.size === 'A5'}
+					Print double-sided (flip on long edge). Fold in half and staple in the middle.
+				{:else}
+					Print double-sided (flip on long edge). Cut A4 sheets in half horizontally. Stack and
+					fold.
+				{/if}
+			</div>
+		</div>
 
-		<!-- Live Preview Area -->
-		<section class="lg:col-span-8 flex flex-col gap-6">
-			<div class="flex items-center justify-between font-mono">
-				<h2 class="text-xl font-bold flex items-center gap-2">
-					<span class="w-1.5 h-6 bg-pink-500 rounded-full"></span>
-					Print Preview
-				</h2>
-				<div class="flex items-center gap-4 text-[10px] text-slate-500 uppercase tracking-widest">
-					<span class="flex items-center gap-1">
-						<div class="w-3 h-0.5 border-t border-dashed border-pink-500/50"></div>
-						Fold Line
-					</span>
-					<span class="flex items-center gap-1">
-						<div class="w-3 h-0.5 bg-slate-700"></div>
-						Cut Line
-					</span>
+		<!-- Export progress bar -->
+		{#if isExporting}
+			<div class="space-y-2 rounded-2xl border border-slate-800 bg-slate-900/50 p-4">
+				<div class="flex justify-between font-mono text-[10px] text-slate-500">
+					<span class="tracking-widest uppercase">Rendering page</span>
+					<span class="text-purple-400">{exportCurrent} / {exportTotal}</span>
+				</div>
+				<div class="h-1.5 overflow-hidden rounded-full bg-slate-800">
+					<div
+						class="h-full rounded-full bg-purple-500 transition-all duration-300"
+						style="width: {exportTotal ? (exportCurrent / exportTotal) * 100 : 0}%"
+					></div>
 				</div>
 			</div>
+		{/if}
 
-			<div class="bg-slate-900 border border-slate-800 rounded-3xl p-8 flex items-center justify-center h-[800px] relative overflow-hidden">
-				{#if isProcessing}
-					<div class="flex flex-col items-center gap-4 animate-pulse">
-						<div class="w-12 h-12 border-4 border-purple-500/20 border-t-purple-500 rounded-full animate-spin"></div>
-						<p class="font-bold text-slate-500 text-xs uppercase tracking-widest">Generating Sheets...</p>
+		<!-- Quick Downloader -->
+		<button
+			onclick={downloadPdf}
+			disabled={!generatedPdfUrl || isProcessing || isExporting}
+			class="block w-full rounded-2xl bg-linear-to-r from-purple-600 to-pink-600 py-4 text-center font-black text-white shadow-lg shadow-purple-500/20 transition-all hover:from-purple-500 hover:to-pink-500 disabled:cursor-not-allowed disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-600"
+		>
+			{isProcessing ? 'GENERATING...' : isExporting ? 'EXPORTING...' : 'DOWNLOAD PDF'}
+		</button>
+	</aside>
+
+	<!-- Live Preview Area -->
+	<section class="flex flex-col gap-6 lg:col-span-8">
+		<div class="flex items-center justify-between font-mono">
+			<h2 class="flex items-center gap-2 text-xl font-bold">
+				<span class="h-6 w-1.5 rounded-full bg-pink-500"></span>
+				Print Preview
+			</h2>
+			<div class="flex items-center gap-4 text-[10px] tracking-widest text-slate-500 uppercase">
+				<span class="flex items-center gap-1">
+					<div class="h-0.5 w-3 border-t border-dashed border-pink-500/50"></div>
+					Fold Line
+				</span>
+				<span class="flex items-center gap-1">
+					<div class="h-0.5 w-3 bg-slate-700"></div>
+					Cut Line
+				</span>
+			</div>
+		</div>
+
+		<div
+			class="relative flex h-[800px] items-center justify-center overflow-hidden rounded-3xl border border-slate-800 bg-slate-900 p-8"
+		>
+			{#if isProcessing}
+				<div class="flex animate-pulse flex-col items-center gap-4">
+					<div
+						class="h-12 w-12 animate-spin rounded-full border-4 border-purple-500/20 border-t-purple-500"
+					></div>
+					<p class="text-xs font-bold tracking-widest text-slate-500 uppercase">
+						Generating Sheets...
+					</p>
+				</div>
+			{:else if impositionError}
+				<div class="flex max-w-sm flex-col items-center gap-3 text-center">
+					<div
+						class="flex h-12 w-12 items-center justify-center rounded-xl bg-red-500/10 text-red-400"
+					>
+						<svg
+							xmlns="http://www.w3.org/2000/svg"
+							width="24"
+							height="24"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+							><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line
+								x1="12"
+								y1="16"
+								x2="12.01"
+								y2="16"
+							/></svg
+						>
 					</div>
-				{:else if impositionError}
-				<div class="flex flex-col items-center gap-3 text-center max-w-sm">
-					<div class="w-12 h-12 bg-red-500/10 rounded-xl flex items-center justify-center text-red-400">
-						<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-					</div>
-					<p class="text-red-400 font-bold text-xs uppercase tracking-widest">Imposition Error</p>
-					<p class="text-slate-500 text-xs font-mono">{impositionError}</p>
+					<p class="text-xs font-bold tracking-widest text-red-400 uppercase">Imposition Error</p>
+					<p class="font-mono text-xs text-slate-500">{impositionError}</p>
 				</div>
 			{:else if pdfData}
-					<div class="w-full h-full flex flex-col items-center gap-8 p-4">
-						{#if view === 'print'}
-							{#if generatedPdfUrl}
-								<div class="w-full h-full overflow-y-auto pr-2 space-y-12 flex flex-col items-center custom-scrollbar">
-									{#each Array.from({ length: numImposedPages }, (_, i) => i) as i (i)}
-										{@const sheetNum = Math.floor(i / 2) + 1}
-										{@const isFront = i % 2 === 0}
-										
-										<div class="w-full max-w-[550px] space-y-3" use:lazyPage={i}>
-											{#if isFront}
-												<div class="flex items-center gap-4 mb-2">
-													<div class="h-px flex-1 bg-slate-800"></div>
-													<span class="text-[10px] font-black uppercase tracking-widest text-slate-500">Sheet {sheetNum}</span>
-													<div class="h-px flex-1 bg-slate-800"></div>
-												</div>
-											{/if}
+				<div class="flex h-full w-full flex-col items-center gap-8 p-4">
+					{#if view === 'print'}
+						{#if generatedPdfUrl}
+							<div
+								class="custom-scrollbar flex h-full w-full flex-col items-center space-y-12 overflow-y-auto pr-2"
+							>
+								{#each Array.from({ length: numImposedPages }, (_, i) => i) as i (i)}
+									{@const sheetNum = Math.floor(i / 2) + 1}
+									{@const isFront = i % 2 === 0}
 
-											<div class="bg-white rounded-lg shadow-2xl relative transition-transform hover:scale-[1.01] w-full shrink-0 {previewAspect} group/sheet overflow-hidden" style={previewFilter ? `filter: ${previewFilter}` : undefined}>
-												{#if visiblePages.has(i)}
+									<div class="w-full max-w-[550px] space-y-3" use:lazyPage={i}>
+										{#if isFront}
+											<div class="mb-2 flex items-center gap-4">
+												<div class="h-px flex-1 bg-slate-800"></div>
+												<span
+													class="text-[10px] font-black tracking-widest text-slate-500 uppercase"
+													>Sheet {sheetNum}</span
+												>
+												<div class="h-px flex-1 bg-slate-800"></div>
+											</div>
+										{/if}
+
+										<div
+											class="relative w-full shrink-0 rounded-lg bg-white shadow-2xl transition-transform hover:scale-[1.01] {previewAspect} group/sheet overflow-hidden"
+											style={previewFilter ? `filter: ${previewFilter}` : undefined}
+										>
+											{#if visiblePages.has(i)}
 												<SheetPreview pdfBuffer={imposedPdfData} pageNumber={i + 1} />
 											{:else}
-												<div class="w-full h-full bg-slate-100 animate-pulse"></div>
+												<div class="h-full w-full animate-pulse bg-slate-100"></div>
 											{/if}
-												
-												<!-- Overlays (Fold lines etc) -->
-												<div class="absolute inset-0 pointer-events-none border-2 border-slate-700/10">
-													{#if options.size === 'A5'}
-														<div class="absolute top-0 bottom-0 left-1/2 border-l border-dashed border-pink-500/40"></div>
-													{:else}
-														<!-- A6: Cross layout (Horizontal Cut, Vertical Fold) -->
-														<div class="absolute inset-0 flex flex-col">
-															<!-- Top row: vertical fold line, horizontal cut line at bottom -->
-															<div class="flex-1 border-b border-slate-400/60 flex">
-																<div class="flex-1 border-r border-dashed border-pink-500/30"></div>
-																<div class="flex-1"></div>
-															</div>
-															<!-- Bottom row: vertical fold line -->
-															<div class="flex-1 flex">
-																<div class="flex-1 border-r border-dashed border-pink-500/30"></div>
-																<div class="flex-1"></div>
-															</div>
-														</div>
-													{/if}
-												</div>
 
-												<!-- Smart Label -->
-												<div class="absolute top-3 right-3 flex items-center gap-2">
-													<div class="bg-slate-900/90 backdrop-blur-md text-[9px] text-white px-2.5 py-1 rounded-full uppercase font-black tracking-tighter shadow-xl border border-white/10">
-														Sheet {sheetNum} <span class="text-purple-400 mx-1">•</span> {isFront ? 'Front' : 'Back'}
+											<!-- Overlays (Fold lines etc) -->
+											<div
+												class="pointer-events-none absolute inset-0 border-2 border-slate-700/10"
+											>
+												{#if options.size === 'A5'}
+													<div
+														class="absolute top-0 bottom-0 left-1/2 border-l border-dashed border-pink-500/40"
+													></div>
+												{:else}
+													<!-- A6: Cross layout (Horizontal Cut, Vertical Fold) -->
+													<div class="absolute inset-0 flex flex-col">
+														<!-- Top row: vertical fold line, horizontal cut line at bottom -->
+														<div class="flex flex-1 border-b border-slate-400/60">
+															<div class="flex-1 border-r border-dashed border-pink-500/30"></div>
+															<div class="flex-1"></div>
+														</div>
+														<!-- Bottom row: vertical fold line -->
+														<div class="flex flex-1">
+															<div class="flex-1 border-r border-dashed border-pink-500/30"></div>
+															<div class="flex-1"></div>
+														</div>
 													</div>
+												{/if}
+											</div>
+
+											<!-- Smart Label -->
+											<div class="absolute top-3 right-3 flex items-center gap-2">
+												<div
+													class="rounded-full border border-white/10 bg-slate-900/90 px-2.5 py-1 text-[9px] font-black tracking-tighter text-white uppercase shadow-xl backdrop-blur-md"
+												>
+													Sheet {sheetNum} <span class="mx-1 text-purple-400">•</span>
+													{isFront ? 'Front' : 'Back'}
 												</div>
 											</div>
 										</div>
-									{/each}
-									
-									<div class="py-12 text-center space-y-2 opacity-30">
-										<div class="w-1.5 h-1.5 bg-slate-500 rounded-full mx-auto"></div>
-										<p class="text-[10px] font-bold uppercase tracking-widest text-slate-500">End of Preview</p>
 									</div>
+								{/each}
+
+								<div class="space-y-2 py-12 text-center opacity-30">
+									<div class="mx-auto h-1.5 w-1.5 rounded-full bg-slate-500"></div>
+									<p class="text-[10px] font-bold tracking-widest text-slate-500 uppercase">
+										End of Preview
+									</p>
 								</div>
-							{:else}
-								<div class="flex flex-col items-center gap-4 opacity-40">
-									<div class="w-12 h-12 border-4 border-slate-700/20 border-t-slate-500 rounded-full animate-spin"></div>
-									<p class="text-[10px] font-bold uppercase tracking-widest text-slate-500">Preparing Print Preview...</p>
-								</div>
-							{/if}
+							</div>
 						{:else}
-							<div style={previewFilter ? `filter: ${previewFilter}; width: 100%; height: 100%` : 'width: 100%; height: 100%'}>
+							<div class="flex flex-col items-center gap-4 opacity-40">
+								<div
+									class="h-12 w-12 animate-spin rounded-full border-4 border-slate-700/20 border-t-slate-500"
+								></div>
+								<p class="text-[10px] font-bold tracking-widest text-slate-500 uppercase">
+									Preparing Print Preview...
+								</p>
+							</div>
+						{/if}
+					{:else}
+						<div
+							style={previewFilter
+								? `filter: ${previewFilter}; width: 100%; height: 100%`
+								: 'width: 100%; height: 100%'}
+						>
 							<FoldedPreview {pdfData} {options} />
 						</div>
-						{/if}
+					{/if}
+				</div>
+			{:else}
+				<div class="text-center opacity-40">
+					<div
+						class="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-3xl bg-slate-800"
+					>
+						<svg
+							xmlns="http://www.w3.org/2000/svg"
+							width="32"
+							height="32"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							class="text-slate-600"
+							><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline
+								points="14 2 14 8 20 8"
+							/><line x1="12" y1="18" x2="12" y2="12" /><polyline points="9 15 12 12 15 15" /></svg
+						>
 					</div>
-				{:else}
-					<div class="text-center opacity-40">
-						<div class="w-20 h-20 bg-slate-800 rounded-3xl flex items-center justify-center mx-auto mb-6">
-							<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-slate-600"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 12 15 15"/></svg>
-						</div>
-						<p class="text-slate-500 font-medium text-xs uppercase tracking-widest">Awaiting PDF Upload</p>
-					</div>
-				{/if}
-			</div>
-		</section>
-	</main>
+					<p class="text-xs font-medium tracking-widest text-slate-500 uppercase">
+						Awaiting PDF Upload
+					</p>
+				</div>
+			{/if}
+		</div>
+	</section>
+</main>
 
 <style>
 	:global(body) {
