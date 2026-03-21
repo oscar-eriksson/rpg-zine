@@ -1,11 +1,14 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
-	import { browser } from '$app/environment';
 	import { impose, type ImpositionOptions } from '$lib/imposition';
+	import { bwAlgorithms, colorAlgorithms } from '$lib/filterAlgorithms';
+	import { loadPrefs, savePrefs } from '$lib/prefs';
 	import AssemblyGuide from '$lib/components/AssemblyGuide.svelte';
 	import FoldedPreview from '$lib/components/FoldedPreview.svelte';
 	import SheetPreview from '$lib/components/SheetPreview.svelte';
+	import FilterControls from '$lib/components/FilterControls.svelte';
+	import InspectModal from '$lib/components/InspectModal.svelte';
 
 	let pdfData = $state<ArrayBuffer | null>(null);
 	let pdfName = $state<string>('');
@@ -14,121 +17,11 @@
 	let generatedPdfUrl = $state<string | null>(null);
 	let imposedPdfData = $state<Uint8Array | null>(null);
 	let view = $state<'print' | 'folded'>('print');
-	const bwAlgorithms = [
-		{
-			key: 'lighten',
-			label: 'Lighten',
-			sliderLabel: 'Brightness',
-			desc: 'Brightens uniformly. Safe starting point.',
-			filter: (t: number) => `grayscale(1) brightness(${1 + t})`
-		},
-		{
-			key: 'bleach',
-			label: 'Bleach Out',
-			sliderLabel: 'Intensity',
-			desc: 'Blows out lights, keeps darks crisp. Great for backgrounds.',
-			filter: (t: number) => `grayscale(1) brightness(${1 + t * 0.5}) contrast(${1 + t * 1.2})`
-		},
-		{
-			key: 'high-contrast',
-			label: 'High Contrast',
-			sliderLabel: 'Contrast',
-			desc: 'Pushes grays to black or white. Bold, graphic look.',
-			filter: (t: number) => `grayscale(1) contrast(${1 + t * 2.5})`
-		},
-		{
-			key: 'newsprint',
-			label: 'Newsprint',
-			sliderLabel: 'Exposure',
-			desc: 'Punchy contrast with slight exposure boost. Classic print feel.',
-			filter: (t: number) => `grayscale(1) contrast(${1.4 + t * 0.8}) brightness(${1.1 + t * 0.25})`
-		},
-		{
-			key: 'overexpose',
-			label: 'Overexpose',
-			sliderLabel: 'Wash',
-			desc: 'Aggressively washes out mid-tones. Saves ink.',
-			filter: (t: number) => `grayscale(1) brightness(${1 + t * 2}) contrast(0.8)`
-		},
-		{
-			key: 'sepia',
-			label: 'Sepia',
-			sliderLabel: 'Brightness',
-			desc: 'Warm brownish tone. Vintage or aged document feel.',
-			filter: (t: number) => `sepia(1) brightness(${1 + t * 0.8})`
-		},
-		{
-			key: 'invert',
-			label: 'Invert (Dark BG)',
-			sliderLabel: 'Brightness',
-			desc: 'White-on-black. For designs with dark backgrounds.',
-			filter: (t: number) => `grayscale(1) invert(1) brightness(${1 + t * 0.5})`
-		}
-	];
-	const colorAlgorithms = [
-		{
-			key: 'bleach-warm',
-			label: 'Bleach Warm',
-			sliderLabel: 'Intensity',
-			desc: 'Washes out yellow/warm backgrounds toward white.',
-			filter: (t: number) =>
-				`brightness(${1 + t * 0.6}) saturate(${Math.max(0, 1 - t * 0.7).toFixed(2)}) contrast(${1 + t * 0.1})`
-		},
-		{
-			key: 'vivid',
-			label: 'Vivid',
-			sliderLabel: 'Punch',
-			desc: 'Boosts saturation and contrast. Pops flat colors.',
-			filter: (t: number) => `saturate(${1 + t * 2}) contrast(${1 + t * 0.4})`
-		},
-		{
-			key: 'cool',
-			label: 'Cool',
-			sliderLabel: 'Amount',
-			desc: 'Shifts hues cooler. Reduces warm or yellow cast.',
-			filter: (t: number) => `hue-rotate(${(t * 20).toFixed(1)}deg) brightness(${1 + t * 0.05})`
-		},
-		{
-			key: 'warm',
-			label: 'Warm',
-			sliderLabel: 'Amount',
-			desc: 'Shifts hues warmer. Adds a golden tone to cool images.',
-			filter: (t: number) =>
-				`hue-rotate(${(-t * 15).toFixed(1)}deg) saturate(${1 + t * 0.4}) brightness(${1 + t * 0.05})`
-		}
-	];
-
-	const PREFS_KEY = 'rpg-zine-prefs';
-	type Prefs = {
-		A5?: { printerMargin: number; middleMargin: number };
-		A6?: { printerMargin: number; middleMargin: number };
-		filterMode?: 'none' | 'color' | 'bw';
-		bwAlgorithm?: string;
-		colorAlgorithm?: string;
-		filterStrength?: number;
-	};
-	function loadPrefs(): Prefs {
-		if (!browser) return {};
-		try {
-			return JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}');
-		} catch {
-			return {};
-		}
-	}
-	function savePrefs(patch: Partial<Prefs>) {
-		if (!browser) return;
-		try {
-			localStorage.setItem(PREFS_KEY, JSON.stringify({ ...loadPrefs(), ...patch }));
-		} catch {
-			/* ignore quota/private-browsing errors */
-		}
-	}
 
 	let filterMode = $state<'none' | 'color' | 'bw'>('none');
 	let bwAlgorithm = $state('lighten');
 	let colorAlgorithm = $state('bleach-warm');
 	let filterStrength = $state(0);
-	let algoDropdownOpen = $state(false);
 	let prefsReady = $state(false);
 
 	let currentAlgos = $derived(filterMode === 'bw' ? bwAlgorithms : colorAlgorithms);
@@ -137,6 +30,7 @@
 	let previewFilter = $derived(
 		filterMode !== 'none' ? currentAlgo.filter(filterStrength / 100) : ''
 	);
+
 	let options = $state<ImpositionOptions>({
 		size: 'A5',
 		printerMargin: 5,
@@ -220,7 +114,9 @@
 			exportTotal = 0;
 		}
 	}
+
 	let visiblePages = new SvelteSet<number>();
+	let inspectPage = $state<number | null>(null);
 
 	function lazyPage(node: HTMLElement, index: number) {
 		const observer = new IntersectionObserver(
@@ -246,7 +142,6 @@
 	async function handleFileUpload(event: Event) {
 		const input = event.target as HTMLInputElement;
 		if (!input.files?.length) return;
-
 		const file = input.files[0];
 		pdfName = file.name;
 		pdfData = await file.arrayBuffer();
@@ -257,7 +152,6 @@
 		if (!pdfData) return;
 		isProcessing = true;
 		impositionError = null;
-		// Reset so stale A5 data doesn't show while A6 generates
 		imposedPdfData = null;
 		visiblePages.clear();
 		if (generatedPdfUrl) {
@@ -269,8 +163,6 @@
 			const blob = new Blob([result.buffer as ArrayBuffer], { type: 'application/pdf' });
 			generatedPdfUrl = URL.createObjectURL(blob);
 			imposedPdfData = result;
-
-			// Get imposed page count
 			const { PDFDocument } = await import('pdf-lib');
 			const imposedDoc = await PDFDocument.load((result.buffer as ArrayBuffer).slice(0));
 			numImposedPages = imposedDoc.getPageCount();
@@ -283,13 +175,9 @@
 		}
 	}
 
-	// Re-generate preview when options change.
-	// Svelte 5 only tracks reactive values that are actually *read* inside an
-	// effect.  Checking `if (pdfData && options)` only tracks pdfData and the
-	// object reference — mutations to options.size etc. won't re-fire the
-	// effect.  Destructuring forces Svelte to track each property individually.
-	// untrack() prevents state writes inside generatePreview() from becoming
-	// additional dependencies (that would cause an infinite loop).
+	// Re-generate preview when options change. Destructuring forces Svelte to
+	// track each property individually. untrack() prevents state writes inside
+	// generatePreview() from becoming additional dependencies.
 	$effect(() => {
 		const { size, printerMargin, middleMargin } = options;
 		if (pdfData && size && printerMargin >= 0 && middleMargin >= 0) {
@@ -491,145 +379,13 @@
 				</div>
 			</div>
 
-			<!-- Print Filter -->
-			<div class="mb-8 space-y-6">
-				<div>
-					<span class="mb-3 block text-xs font-bold tracking-widest text-slate-500 uppercase"
-						>Print Filter</span
-					>
-					<div class="grid grid-cols-3 gap-2">
-						{#each [['none', 'None'], ['color', 'Color'], ['bw', 'B&W']] as const as [mode, label] (mode)}
-							<button
-								onclick={() => {
-									filterMode = mode;
-									algoDropdownOpen = false;
-								}}
-								class="rounded-xl border-2 py-2.5 text-[10px] font-black transition-all {filterMode ===
-								mode
-									? 'border-purple-500 bg-purple-500/10 text-white'
-									: 'border-slate-800 text-slate-600 hover:border-slate-700 hover:text-slate-400'}"
-								>{label}</button
-							>
-						{/each}
-					</div>
-				</div>
-
-				{#if filterMode !== 'none'}
-					<div class="space-y-6">
-						<div>
-							<span class="mb-3 block text-xs font-bold tracking-widest text-slate-500 uppercase"
-								>Algorithm</span
-							>
-							<div class="relative">
-								<button
-									onclick={(e) => {
-										e.stopPropagation();
-										algoDropdownOpen = !algoDropdownOpen;
-									}}
-									class="flex w-full items-center justify-between gap-2 rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-xs font-bold text-slate-300 transition-colors hover:border-slate-600 {algoDropdownOpen
-										? 'border-purple-500/50'
-										: ''}"
-								>
-									<span>{currentAlgo.label}</span>
-									<svg
-										xmlns="http://www.w3.org/2000/svg"
-										width="12"
-										height="12"
-										viewBox="0 0 24 24"
-										fill="none"
-										stroke="currentColor"
-										stroke-width="2.5"
-										stroke-linecap="round"
-										stroke-linejoin="round"
-										class="text-slate-500 transition-transform {algoDropdownOpen
-											? 'rotate-180'
-											: ''}"><path d="m6 9 6 6 6-6" /></svg
-									>
-								</button>
-								{#if algoDropdownOpen}
-									<div
-										class="fixed inset-0 z-40"
-										onclick={() => (algoDropdownOpen = false)}
-										aria-hidden="true"
-									></div>
-									<div
-										class="absolute top-full right-0 left-0 z-50 mt-1.5 overflow-hidden rounded-xl border border-slate-700 bg-slate-900 shadow-2xl shadow-black/50"
-									>
-										{#each currentAlgos as algo (algo.key)}
-											<button
-												onclick={() => {
-													if (filterMode === 'bw') bwAlgorithm = algo.key;
-													else colorAlgorithm = algo.key;
-													algoDropdownOpen = false;
-												}}
-												class="flex w-full flex-col items-start gap-0 px-4 py-2.5 text-left text-xs font-bold transition-colors
-														{currentAlgoKey === algo.key
-													? 'border-l-2 border-purple-500 bg-purple-500/10 text-purple-300'
-													: 'border-l-2 border-transparent text-slate-400 hover:bg-slate-800 hover:text-slate-200'}"
-											>
-												<span>{algo.label}</span>
-												<span class="mt-0.5 block text-[10px] leading-tight font-normal opacity-50"
-													>{algo.desc}</span
-												>
-											</button>
-										{/each}
-									</div>
-								{/if}
-							</div>
-						</div>
-						<div class="group">
-							<div class="mb-4 flex items-center justify-between">
-								<label
-									for="filter-strength"
-									class="text-xs font-bold tracking-widest text-slate-500 uppercase transition-colors group-hover:text-slate-400"
-									>{currentAlgo.sliderLabel}</label
-								>
-								<span
-									class="rounded bg-purple-500/5 px-2 py-0.5 font-mono text-[10px] text-purple-500"
-									>{filterStrength}%</span
-								>
-							</div>
-							<input
-								id="filter-strength"
-								type="range"
-								bind:value={filterStrength}
-								min="0"
-								max="100"
-								class="h-1.5 w-full cursor-pointer appearance-none rounded-lg bg-slate-800 accent-purple-500"
-							/>
-						</div>
-					</div>
-				{/if}
-
-				<!-- Export Quality — always visible, disabled when no filter -->
-				<div class={filterMode !== 'none' ? '' : 'pointer-events-none opacity-40'}>
-					<div class="mb-3 flex items-center justify-between">
-						<span class="text-xs font-bold tracking-widest text-slate-500 uppercase"
-							>Export Quality</span
-						>
-						{#if filterMode === 'none'}
-							<span class="rounded bg-slate-800 px-2 py-0.5 font-mono text-[10px] text-slate-500"
-								>Vector ∞ DPI</span
-							>
-						{/if}
-					</div>
-					<div class="grid grid-cols-3 gap-2">
-						{#each [{ dpi: 144, label: 'Draft' }, { dpi: 216, label: 'Standard' }, { dpi: 288, label: 'High' }] as preset (preset.dpi)}
-							<button
-								onclick={() => (exportDpi = preset.dpi)}
-								disabled={filterMode === 'none'}
-								class="flex flex-col items-center gap-0.5 rounded-xl border-2 px-2 py-2 text-[10px] font-black transition-all {exportDpi ===
-									preset.dpi && filterMode !== 'none'
-									? 'border-purple-500 bg-purple-500/10 text-white'
-									: 'border-slate-800 text-slate-600'}"
-							>
-								<span>{preset.label}</span>
-								<span class="font-mono opacity-60">{preset.dpi}dpi</span>
-							</button>
-						{/each}
-					</div>
-				</div>
-			</div>
+			<FilterControls
+				bind:filterMode
+				bind:bwAlgorithm
+				bind:colorAlgorithm
+				bind:filterStrength
+				bind:exportDpi
+			/>
 
 			<!-- View Switcher -->
 			<div class="mb-8 flex rounded-xl border border-slate-700/50 bg-slate-900 p-1">
@@ -655,7 +411,7 @@
 				<AssemblyGuide size={options.size} duplex={true} />
 			</div>
 
-			<!-- Assembly Guide / Instructions -->
+			<!-- Assembly Info -->
 			<div
 				class="rounded-xl border border-slate-700/50 bg-slate-900/50 p-4 text-xs leading-relaxed text-slate-500"
 			>
@@ -704,7 +460,7 @@
 			</div>
 		{/if}
 
-		<!-- Quick Downloader -->
+		<!-- Download button -->
 		<button
 			onclick={downloadPdf}
 			disabled={!generatedPdfUrl || isProcessing || isExporting}
@@ -793,8 +549,12 @@
 										{/if}
 
 										<div
-											class="relative w-full shrink-0 rounded-lg bg-white shadow-2xl transition-transform hover:scale-[1.01] {previewAspect} group/sheet overflow-hidden"
+											class="relative w-full shrink-0 cursor-zoom-in rounded-lg bg-white shadow-2xl transition-transform hover:scale-[1.01] {previewAspect} group/sheet overflow-hidden"
 											style={previewFilter ? `filter: ${previewFilter}` : undefined}
+											onclick={() => (inspectPage = i + 1)}
+											role="button"
+											tabindex="0"
+											onkeydown={(e) => e.key === 'Enter' && (inspectPage = i + 1)}
 										>
 											{#if visiblePages.has(i)}
 												<SheetPreview pdfBuffer={imposedPdfData} pageNumber={i + 1} />
@@ -813,18 +573,28 @@
 												{:else}
 													<!-- A6: Cross layout (Horizontal Cut, Vertical Fold) -->
 													<div class="absolute inset-0 flex flex-col">
-														<!-- Top row: vertical fold line, horizontal cut line at bottom -->
 														<div class="flex flex-1 border-b border-slate-400/60">
 															<div class="flex-1 border-r border-dashed border-pink-500/30"></div>
 															<div class="flex-1"></div>
 														</div>
-														<!-- Bottom row: vertical fold line -->
 														<div class="flex flex-1">
 															<div class="flex-1 border-r border-dashed border-pink-500/30"></div>
 															<div class="flex-1"></div>
 														</div>
 													</div>
 												{/if}
+											</div>
+
+											<!-- Inspect hover hint -->
+											<div
+												class="pointer-events-none absolute bottom-3 left-3 opacity-0 transition-opacity group-hover/sheet:opacity-100"
+											>
+												<div
+													class="flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-1 text-[9px] font-bold text-white backdrop-blur-sm"
+												>
+													<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+													Inspect
+												</div>
 											</div>
 
 											<!-- Smart Label -->
@@ -896,6 +666,14 @@
 		</div>
 	</section>
 </main>
+
+<InspectModal
+	bind:page={inspectPage}
+	numPages={numImposedPages}
+	pdfBuffer={imposedPdfData}
+	{previewFilter}
+	{previewAspect}
+/>
 
 <style>
 	:global(body) {
