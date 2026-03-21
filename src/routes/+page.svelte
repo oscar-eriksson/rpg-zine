@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
+	import { browser } from '$app/environment';
 	import { impose, type ImpositionOptions } from '$lib/imposition';
 	import AssemblyGuide from '$lib/components/AssemblyGuide.svelte';
 	import FoldedPreview from '$lib/components/FoldedPreview.svelte';
@@ -12,6 +14,29 @@
 	let generatedPdfUrl = $state<string | null>(null);
 	let imposedPdfData = $state<Uint8Array | null>(null);
 	let view = $state<'print' | 'folded'>('print');
+	const filterAlgorithms = [
+		{ key: 'lighten',       label: 'Lighten',          sliderLabel: 'Brightness', filter: (t: number) => `grayscale(1) brightness(${1 + t})` },
+		{ key: 'bleach',        label: 'Bleach Out',        sliderLabel: 'Intensity',  filter: (t: number) => `grayscale(1) brightness(${1 + t * 0.5}) contrast(${1 + t * 1.2})` },
+		{ key: 'high-contrast', label: 'High Contrast',     sliderLabel: 'Contrast',   filter: (t: number) => `grayscale(1) contrast(${1 + t * 2.5})` },
+		{ key: 'newsprint',     label: 'Newsprint',         sliderLabel: 'Exposure',   filter: (t: number) => `grayscale(1) contrast(${1.4 + t * 0.8}) brightness(${1.1 + t * 0.25})` },
+		{ key: 'overexpose',    label: 'Overexpose',        sliderLabel: 'Wash',       filter: (t: number) => `grayscale(1) brightness(${1 + t * 2}) contrast(0.8)` },
+		{ key: 'sepia',         label: 'Sepia',             sliderLabel: 'Brightness', filter: (t: number) => `sepia(1) brightness(${1 + t * 0.8})` },
+		{ key: 'invert',        label: 'Invert (Dark BG)',  sliderLabel: 'Brightness', filter: (t: number) => `grayscale(1) invert(1) brightness(${1 + t * 0.5})` },
+	];
+
+	const PREFS_KEY = 'rpg-zine-prefs';
+	type Prefs = { A5?: { printerMargin: number; middleMargin: number }; A6?: { printerMargin: number; middleMargin: number }; bwMode?: boolean; filterAlgorithm?: string; filterStrength?: number };
+	function loadPrefs(): Prefs { if (!browser) return {}; try { return JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}'); } catch { return {}; } }
+	function savePrefs(patch: Partial<Prefs>) { if (!browser) return; try { localStorage.setItem(PREFS_KEY, JSON.stringify({ ...loadPrefs(), ...patch })); } catch {} }
+
+	let bwMode = $state(false);
+	let filterAlgorithm = $state('lighten');
+	let filterStrength = $state(0);
+	let algoDropdownOpen = $state(false);
+	let prefsReady = $state(false);
+
+	let currentAlgo = $derived(filterAlgorithms.find(a => a.key === filterAlgorithm) ?? filterAlgorithms[0]);
+	let previewFilter = $derived(bwMode ? currentAlgo.filter(filterStrength / 100) : '');
 
 	let options = $state<ImpositionOptions>({
 		size: 'A5',
@@ -24,6 +49,28 @@
 	let previewAspect = $derived(options.size === 'A5' ? 'aspect-[1.414/1]' : 'aspect-[1/1.414]');
 
 	let numImposedPages = $state(0);
+	let visiblePages = new SvelteSet<number>();
+
+	function lazyPage(node: HTMLElement, index: number) {
+		const observer = new IntersectionObserver(
+			(entries) => {
+				for (const entry of entries) {
+					if (entry.isIntersecting) {
+						visiblePages.add(index);
+					} else {
+						visiblePages.delete(index);
+					}
+				}
+			},
+			{ rootMargin: '800px 0px', threshold: 0 }
+		);
+		observer.observe(node);
+		return {
+			destroy() {
+				observer.disconnect();
+			}
+		};
+	}
 
 	async function handleFileUpload(event: Event) {
 		const input = event.target as HTMLInputElement;
@@ -41,6 +88,7 @@
 		impositionError = null;
 		// Reset so stale A5 data doesn't show while A6 generates
 		imposedPdfData = null;
+		visiblePages.clear();
 		if (generatedPdfUrl) { URL.revokeObjectURL(generatedPdfUrl); generatedPdfUrl = null; }
 		try {
 			const result = await impose(pdfData.slice(0), options);
@@ -69,16 +117,32 @@
 	// untrack() prevents state writes inside generatePreview() from becoming
 	// additional dependencies (that would cause an infinite loop).
 	$effect(() => {
-		const { size, printerMargin, middleMargin, duplex } = options;
-		if (pdfData && size && printerMargin >= 0 && middleMargin >= 0 && duplex !== undefined) {
+		const { size, printerMargin, middleMargin } = options;
+		if (pdfData && size && printerMargin >= 0 && middleMargin >= 0) {
 			untrack(() => generatePreview());
 		}
 	});
 
+	// Save margins keyed by size; save filter prefs flat — only after initial load
+	$effect(() => {
+		const { size, printerMargin, middleMargin } = options;
+		if (prefsReady) savePrefs({ [size]: { printerMargin, middleMargin } });
+	});
+	$effect(() => {
+		const bw = bwMode, algo = filterAlgorithm, strength = filterStrength;
+		if (prefsReady) savePrefs({ bwMode: bw, filterAlgorithm: algo, filterStrength: strength });
+	});
+
 	onMount(() => {
-		return () => {
-			if (generatedPdfUrl) URL.revokeObjectURL(generatedPdfUrl);
-		};
+		const prefs = loadPrefs();
+		const size = options.size;
+		const sp = prefs[size];
+		if (sp) { options.printerMargin = sp.printerMargin; options.middleMargin = sp.middleMargin; }
+		if (prefs.bwMode !== undefined) bwMode = prefs.bwMode;
+		if (prefs.filterAlgorithm) filterAlgorithm = prefs.filterAlgorithm;
+		if (prefs.filterStrength !== undefined) filterStrength = prefs.filterStrength;
+		prefsReady = true;
+		return () => { if (generatedPdfUrl) URL.revokeObjectURL(generatedPdfUrl); };
 	});
 </script>
 
@@ -125,7 +189,7 @@
 					<div class="grid grid-cols-2 gap-4">
 						{#each ['A5', 'A6'] as size (size)}
 							<button 
-								onclick={() => options.size = size as 'A5' | 'A6'}
+								onclick={() => { const s = size as 'A5' | 'A6'; options.size = s; const sp = loadPrefs()[s]; if (sp) { options.printerMargin = sp.printerMargin; options.middleMargin = sp.middleMargin; } }}
 								class="py-4 px-6 rounded-2xl border-2 font-black transition-all group overflow-hidden relative {options.size === size ? 'border-purple-500 bg-purple-500/10 text-white shadow-lg shadow-purple-500/10' : 'border-slate-800 text-slate-600 hover:border-slate-700 hover:text-slate-400'}"
 							>
 								<span class="relative z-10">{size}</span>
@@ -155,15 +219,54 @@
 					</div>
 				</div>
 
-				<!-- Duplex Toggle -->
-				<div class="mb-8">
+		<!-- B&W / Print Filter -->
+				<div class="mb-8 space-y-6">
 					<label class="flex items-center gap-3 cursor-pointer group">
 						<div class="relative">
-							<input type="checkbox" bind:checked={options.duplex} class="sr-only peer" />
+							<input type="checkbox" bind:checked={bwMode} class="sr-only peer" />
 							<div class="w-11 h-6 bg-slate-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
 						</div>
-						<span class="text-sm font-medium text-slate-400 group-hover:text-slate-300 transition-colors">Duplex (Double Sided)</span>
+						<span class="text-sm font-medium text-slate-400 group-hover:text-slate-300 transition-colors">Black &amp; White Mode</span>
 					</label>
+					{#if bwMode}
+						<div class="space-y-6">
+							<div>
+								<span class="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Algorithm</span>
+								<div class="relative">
+									<button
+										onclick={(e) => { e.stopPropagation(); algoDropdownOpen = !algoDropdownOpen; }}
+										class="w-full flex items-center justify-between gap-2 bg-slate-800 border border-slate-700 hover:border-slate-600 text-slate-300 text-xs font-bold rounded-xl px-4 py-3 transition-colors {algoDropdownOpen ? 'border-purple-500/50' : ''}"
+									>
+										<span>{currentAlgo.label}</span>
+										<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-slate-500 transition-transform {algoDropdownOpen ? 'rotate-180' : ''}"><path d="m6 9 6 6 6-6"/></svg>
+									</button>
+									{#if algoDropdownOpen}
+										<div class="fixed inset-0 z-40" onclick={() => algoDropdownOpen = false} aria-hidden="true"></div>
+										<div class="absolute top-full left-0 right-0 mt-1.5 bg-slate-900 border border-slate-700 rounded-xl overflow-hidden z-50 shadow-2xl shadow-black/50">
+											{#each filterAlgorithms as algo (algo.key)}
+												<button
+													onclick={() => { filterAlgorithm = algo.key; algoDropdownOpen = false; }}
+													class="w-full text-left px-4 py-2.5 text-xs font-bold transition-colors flex items-center gap-3
+														{filterAlgorithm === algo.key
+															? 'bg-purple-500/10 text-purple-300 border-l-2 border-purple-500'
+															: 'text-slate-400 hover:bg-slate-800 hover:text-slate-200 border-l-2 border-transparent'}"
+												>
+													{algo.label}
+												</button>
+											{/each}
+										</div>
+									{/if}
+								</div>
+							</div>
+							<div class="group">
+								<div class="flex justify-between items-center mb-4">
+									<label for="filter-strength" class="text-xs font-bold text-slate-500 uppercase tracking-widest group-hover:text-slate-400 transition-colors">{currentAlgo.sliderLabel}</label>
+									<span class="text-[10px] font-mono text-purple-500 bg-purple-500/5 px-2 py-0.5 rounded">{filterStrength}%</span>
+								</div>
+								<input id="filter-strength" type="range" bind:value={filterStrength} min="0" max="100" class="w-full accent-purple-500 h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer" />
+							</div>
+						</div>
+					{/if}
 				</div>
 
 				<!-- View Switcher -->
@@ -183,7 +286,7 @@
 				</div>
 
 				<div class="mb-8">
-					<AssemblyGuide size={options.size} duplex={options.duplex} />
+					<AssemblyGuide size={options.size} duplex={true} />
 				</div>
 
 				<!-- Assembly Guide / Instructions -->
@@ -257,7 +360,7 @@
 										{@const sheetNum = Math.floor(i / 2) + 1}
 										{@const isFront = i % 2 === 0}
 										
-										<div class="w-full max-w-[550px] space-y-3">
+										<div class="w-full max-w-[550px] space-y-3" use:lazyPage={i}>
 											{#if isFront}
 												<div class="flex items-center gap-4 mb-2">
 													<div class="h-px flex-1 bg-slate-800"></div>
@@ -266,8 +369,12 @@
 												</div>
 											{/if}
 
-											<div class="bg-white rounded-lg shadow-2xl relative transition-transform hover:scale-[1.01] w-full shrink-0 {previewAspect} group/sheet overflow-hidden">
+											<div class="bg-white rounded-lg shadow-2xl relative transition-transform hover:scale-[1.01] w-full shrink-0 {previewAspect} group/sheet overflow-hidden" style={previewFilter ? `filter: ${previewFilter}` : undefined}>
+												{#if visiblePages.has(i)}
 												<SheetPreview pdfBuffer={imposedPdfData} pageNumber={i + 1} />
+											{:else}
+												<div class="w-full h-full bg-slate-100 animate-pulse"></div>
+											{/if}
 												
 												<!-- Overlays (Fold lines etc) -->
 												<div class="absolute inset-0 pointer-events-none border-2 border-slate-700/10">
@@ -312,7 +419,9 @@
 								</div>
 							{/if}
 						{:else}
+							<div style={previewFilter ? `filter: ${previewFilter}; width: 100%; height: 100%` : 'width: 100%; height: 100%'}>
 							<FoldedPreview {pdfData} {options} />
+						</div>
 						{/if}
 					</div>
 				{:else}
